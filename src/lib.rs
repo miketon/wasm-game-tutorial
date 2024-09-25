@@ -1,8 +1,5 @@
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    console,
-    window,
-    HtmlCanvasElement,
     CanvasRenderingContext2d,
 };
 use wasm_bindgen::JsCast;
@@ -10,22 +7,34 @@ use wasm_bindgen::JsCast;
 #[wasm_bindgen]
 pub fn main_js()-> Result<(), JsValue> {
 
-    // TODO: Explain what this does
+    // setup better panic messages for debugging
     console_error_panic_hook::set_once();
 
     // get context
     let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap()
-        .dyn_into::<web_sys::HtmlCanvasElement>().unwrap();
-    // TODO: instead of 2 unwraps consider using expect : better error handling
-    let context = canvas.get_context("2d").unwrap().unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>().unwrap();
-    draw_triangle(&context);
+    // TODO-done: unwrap -> expect for more explicit error messages
+    let document = window.document().expect("document on window required");
+    let canvas = document
+        .get_element_by_id("canvas")
+        .expect("canvas element required")
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .expect("HtmlCanvasElement required");
+    let context = canvas.get_context("2d")
+        .expect("2d context required")
+        .expect("context should exist")
+        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .expect("context should be a CanvasRenderingContext2d");
+
+    // draw @context
+    // - add '?' end of function if function returns a Result<>
+    // - web assembly code interacting with javascript can fail silently,
+    // returning Result<> fails loudly as a forcing factor to fix 
+    draw_triangle(&context)?;
+
     Ok(())
 }
 
-fn draw_triangle(context: &CanvasRenderingContext2d) {
+fn draw_triangle(context: &CanvasRenderingContext2d) -> Result<(), JsValue> {
     // get to start position
     context.move_to(600.0, 0.0);    // top of triangle
 
@@ -38,4 +47,6 @@ fn draw_triangle(context: &CanvasRenderingContext2d) {
     context.close_path();
     context.stroke();
     context.fill();
+    
+    Ok(())
 }

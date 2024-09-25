@@ -15,6 +15,6 @@ TODO: Explain which files require
 
 wasm-pack build --target web
 npm install
-npm run start
+npm start --prefix www
 
 ```
