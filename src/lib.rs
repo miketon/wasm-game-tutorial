@@ -38,6 +38,27 @@ pub fn main_js() -> Result<(), JsValue> {
     // returning Result<> fails loudly as a forcing factor to fix
     let triangle_points = compute_triangle_points(TRIANGLE_LENGTH);
     draw_triangle(&context, triangle_points)?;
+    let lod2 = TRIANGLE_LENGTH * 0.5;
+    let tri_lod2_1 = [(lod2, 0.0), (lod2 * 0.5, lod2), (lod2 * 1.5, lod2)];
+    let tri_lod2_2 = [
+        (lod2 * 0.5, lod2),
+        (0.0, TRIANGLE_LENGTH),
+        (lod2, TRIANGLE_LENGTH),
+    ];
+    let tri_lod2_3 = [
+        (lod2 * 1.5, lod2),
+        (lod2, TRIANGLE_LENGTH),
+        (TRIANGLE_LENGTH, TRIANGLE_LENGTH),
+    ];
+
+    draw_triangle(&context, tri_lod2_1)?;
+    draw_triangle(&context, tri_lod2_2)?;
+    draw_triangle(&context, tri_lod2_3)?;
+
+    // debug draw each triangle point values
+    debug_triangle_point_values(&context, tri_lod2_1)?;
+    debug_triangle_point_values(&context, tri_lod2_2)?;
+    debug_triangle_point_values(&context, tri_lod2_3)?;
 
     Ok(())
 }
@@ -46,7 +67,7 @@ fn draw_triangle(
     context: &CanvasRenderingContext2d,
     points: [(f64, f64); 3],
 ) -> Result<(), JsValue> {
-    // destructuring for clarity
+    // destructuring for readability
     let [top, left, right] = points;
 
     // path out triangle
@@ -69,4 +90,19 @@ fn compute_triangle_points(length: f64) -> [(f64, f64); 3] {
         (0.0, length),       // bottom-left
         (length, length),    // bottom-right
     ]
+}
+
+fn debug_triangle_point_values(
+    context: &CanvasRenderingContext2d,
+    points: [(f64, f64); 3],
+) -> Result<(), JsValue> {
+    // destructuring for readability
+    let [top, left, right] = points;
+    let offset = 15.0;
+    // draw values as text for each point
+    context.fill_text(&format!("{:?}", top), top.0 + offset, top.1 - offset)?;
+    context.fill_text(&format!("{:?}", left), left.0 + offset, left.1 - offset)?;
+    context.fill_text(&format!("{:?}", right), right.0 + offset, right.1 - offset)?;
+
+    Ok(())
 }
