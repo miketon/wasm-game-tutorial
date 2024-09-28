@@ -11,6 +11,9 @@ impl HtmlConst {
 
 const TRIANGLE_LENGTH: f64 = 600.0;
 
+// Define a type alias for a triangle points
+type TrianglePoints = [(f64, f64); 3];
+
 #[wasm_bindgen]
 pub fn main_js() -> Result<(), JsValue> {
     // setup better panic messages for debugging
@@ -32,40 +35,42 @@ pub fn main_js() -> Result<(), JsValue> {
         .dyn_into::<CanvasRenderingContext2d>()
         .expect("context should be a CanvasRenderingContext2d");
 
+    // lod 0
+    let length_0 = TRIANGLE_LENGTH;
+    // lod 1
+    let length_1 = length_0 * 0.5;
+    // lod 2
+    let length_2 = length_1 * 0.5;
     // draw @context
     // - add '?' end of function if function returns a Result<>
     // - web assembly code interacting with javascript can fail silently,
     // returning Result<> fails loudly as a forcing factor to fix
-    let triangle_points = compute_triangle_points(TRIANGLE_LENGTH);
-    draw_triangle(&context, triangle_points)?;
-    let lod2 = TRIANGLE_LENGTH * 0.5;
-    let tri_lod2_1 = [(lod2, 0.0), (lod2 * 0.5, lod2), (lod2 * 1.5, lod2)];
-    let tri_lod2_2 = [
-        (lod2 * 0.5, lod2),
-        (0.0, TRIANGLE_LENGTH),
-        (lod2, TRIANGLE_LENGTH),
-    ];
-    let tri_lod2_3 = [
-        (lod2 * 1.5, lod2),
-        (lod2, TRIANGLE_LENGTH),
-        (TRIANGLE_LENGTH, TRIANGLE_LENGTH),
-    ];
+    let tri_lod_0_0: TrianglePoints = compute_triangle_points(length_0);
+    // base for lod 1 triangle
+    let tri_lod_1_base: TrianglePoints = compute_triangle_points(length_1);
+    // we then offset position that base and draw
+    let tri_lod_1_1: TrianglePoints = tri_lod_1_base.map(|(x, y)| (x + length_2, y));
+    let tri_lod_1_2: TrianglePoints = tri_lod_1_base.map(|(x, y)| (x, y + length_1));
+    let tri_lod_1_3: TrianglePoints = tri_lod_1_base.map(|(x, y)| (x + length_1, y + length_1));
 
-    draw_triangle(&context, tri_lod2_1)?;
-    draw_triangle(&context, tri_lod2_2)?;
-    draw_triangle(&context, tri_lod2_3)?;
+    // lod_0
+    draw_triangle(&context, tri_lod_0_0)?;
+    // lod_1
+    draw_triangle(&context, tri_lod_1_1)?;
+    draw_triangle(&context, tri_lod_1_2)?;
+    draw_triangle(&context, tri_lod_1_3)?;
 
     // debug draw each triangle point values
-    debug_triangle_point_values(&context, tri_lod2_1)?;
-    debug_triangle_point_values(&context, tri_lod2_2)?;
-    debug_triangle_point_values(&context, tri_lod2_3)?;
+    debug_triangle_point_values(&context, tri_lod_1_1)?;
+    debug_triangle_point_values(&context, tri_lod_1_2)?;
+    debug_triangle_point_values(&context, tri_lod_1_3)?;
 
     Ok(())
 }
 
 fn draw_triangle(
     context: &CanvasRenderingContext2d,
-    points: [(f64, f64); 3],
+    points: TrianglePoints,
 ) -> Result<(), JsValue> {
     // destructuring for readability
     let [top, left, right] = points;
@@ -84,7 +89,7 @@ fn draw_triangle(
 }
 
 /// return 3 points of equilateral triangle given length
-fn compute_triangle_points(length: f64) -> [(f64, f64); 3] {
+fn compute_triangle_points(length: f64) -> TrianglePoints {
     [
         (length / 2.0, 0.0), // top
         (0.0, length),       // bottom-left
@@ -94,15 +99,15 @@ fn compute_triangle_points(length: f64) -> [(f64, f64); 3] {
 
 fn debug_triangle_point_values(
     context: &CanvasRenderingContext2d,
-    points: [(f64, f64); 3],
+    points: TrianglePoints,
 ) -> Result<(), JsValue> {
+    let offset = 10.0;
     // destructuring for readability
-    let [top, left, right] = points;
-    let offset = 15.0;
+    let [top, left, right] = points.map(|(x, y)| (x, y + offset));
     // draw values as text for each point
-    context.fill_text(&format!("{:?}", top), top.0 + offset, top.1 - offset)?;
-    context.fill_text(&format!("{:?}", left), left.0 + offset, left.1 - offset)?;
-    context.fill_text(&format!("{:?}", right), right.0 + offset, right.1 - offset)?;
+    context.fill_text(&format!("{:?}", top), top.0, top.1)?;
+    context.fill_text(&format!("{:?}", left), left.0, left.1)?;
+    context.fill_text(&format!("{:?}", right), right.0, right.1)?;
 
     Ok(())
 }
