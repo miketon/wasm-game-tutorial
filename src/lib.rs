@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{window, CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
 
 struct HtmlConst;
 
@@ -35,35 +35,35 @@ pub fn main_js() -> Result<(), JsValue> {
         .dyn_into::<CanvasRenderingContext2d>()
         .expect("context should be a CanvasRenderingContext2d");
 
-    // lod 0
-    let length_0 = TRIANGLE_LENGTH;
-    // lod 1
-    let length_1 = length_0 * 0.5;
-    // lod 2
-    let length_2 = length_1 * 0.5;
-    // draw @context
-    // - add '?' end of function if function returns a Result<>
-    // - web assembly code interacting with javascript can fail silently,
-    // returning Result<> fails loudly as a forcing factor to fix
-    let tri_lod_0_0: TrianglePoints = compute_triangle_points(length_0);
-    // base for lod 1 triangle
-    let tri_lod_1_base: TrianglePoints = compute_triangle_points(length_1);
-    // we then offset position that base and draw
-    let tri_lod_1_1: TrianglePoints = tri_lod_1_base.map(|(x, y)| (x + length_2, y));
-    let tri_lod_1_2: TrianglePoints = tri_lod_1_base.map(|(x, y)| (x, y + length_1));
-    let tri_lod_1_3: TrianglePoints = tri_lod_1_base.map(|(x, y)| (x + length_1, y + length_1));
+    // generate and draw triangles
+    let tri_lod_0_0: TrianglePoints = compute_triangle_points(TRIANGLE_LENGTH);
+    console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
+    sierpinkis(&context, tri_lod_0_0, 3)?;
 
-    // lod_0
-    draw_triangle(&context, tri_lod_0_0)?;
-    // lod_1
-    draw_triangle(&context, tri_lod_1_1)?;
-    draw_triangle(&context, tri_lod_1_2)?;
-    draw_triangle(&context, tri_lod_1_3)?;
+    Ok(())
+}
 
+fn sierpinkis(
+    context: &CanvasRenderingContext2d,
+    points: TrianglePoints,
+    depth: u8,
+) -> Result<(), JsValue> {
+    // this prevents infinite recursion where u8 0 - 1 = 255
+    // because u8 is unsigned
+    // TODO: use usize instead of u8
+    if depth == 0 {
+        return Ok(());
+    }
+
+    draw_triangle(context, points)?;
     // debug draw each triangle point values
-    debug_triangle_point_values(&context, tri_lod_1_1)?;
-    debug_triangle_point_values(&context, tri_lod_1_2)?;
-    debug_triangle_point_values(&context, tri_lod_1_3)?;
+    debug_triangle_point_values(context, points)?;
+    console::log_1(&format!("[sierpinkis] {:?}", depth).into());
+
+    let sub_triangles = compute_sub_triangles(points);
+    for sub_triangle in sub_triangles.iter() {
+        sierpinkis(context, *sub_triangle, depth - 1)?;
+    }
 
     Ok(())
 }
@@ -93,8 +93,25 @@ fn compute_triangle_points(length: f64) -> TrianglePoints {
     [
         (length / 2.0, 0.0), // top
         (0.0, length),       // bottom-left
-        (length, length),    // bottom-right
+        (length, length),    // botttom-right
     ]
+}
+
+fn compute_sub_triangles(points: TrianglePoints) -> [TrianglePoints; 3] {
+    let [top, left, right] = points;
+    let mid_left = midpoint(top, left);
+    let mid_right = midpoint(top, right);
+    let mid_bottom = midpoint(left, right);
+
+    [
+        [top, mid_left, mid_right],
+        [mid_left, left, mid_bottom],
+        [mid_right, mid_bottom, right],
+    ]
+}
+
+fn midpoint(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+    ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
 }
 
 fn debug_triangle_point_values(
