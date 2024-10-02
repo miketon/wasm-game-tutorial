@@ -9,9 +9,15 @@ impl HtmlConst {
     const CONTEXT_2D: &'static str = "2d";
 }
 
-const TRIANGLE_LENGTH: f64 = 600.0;
+struct TriangleConst;
 
-// Define a type alias for a triangle points
+// TODO: expose these values to web interface button for users to change
+impl TriangleConst {
+    const DEPTH: u8 = 5;
+    const LENGTH: f64 = 600.0;
+}
+
+// TODO: Define a type alias for a triangle points
 type TrianglePoints = [(f64, f64); 3];
 
 #[wasm_bindgen]
@@ -36,9 +42,9 @@ pub fn main_js() -> Result<(), JsValue> {
         .expect("context should be a CanvasRenderingContext2d");
 
     // generate and draw triangles
-    let tri_lod_0_0: TrianglePoints = compute_triangle_points(TRIANGLE_LENGTH);
+    let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::LENGTH);
     console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinkis(&context, tri_lod_0_0, 3)?;
+    sierpinkis(&context, tri_lod_0_0, TriangleConst::DEPTH)?;
 
     Ok(())
 }
@@ -48,6 +54,9 @@ fn sierpinkis(
     points: TrianglePoints,
     depth: u8,
 ) -> Result<(), JsValue> {
+    // TODO: figure out why this doesn't print, but main_js log does print
+    // console::log_1(&format!("[sierpinkis] {:?}", depth).into());
+    // console::log_1(&JsValue::from_str(&format!("[sierpinkis] depth: {}", depth)));
     // this prevents infinite recursion where u8 0 - 1 = 255
     // because u8 is unsigned
     // TODO: use usize instead of u8
@@ -56,9 +65,10 @@ fn sierpinkis(
     }
 
     draw_triangle(context, points)?;
-    // debug draw each triangle point values
-    debug_triangle_point_values(context, points)?;
-    console::log_1(&format!("[sierpinkis] {:?}", depth).into());
+    if TriangleConst::DEPTH - depth == 1 {
+        // debug draw each triangle point values
+        debug_triangle_point_values(context, points)?;
+    }
 
     let sub_triangles = compute_sub_triangles(points);
     for sub_triangle in sub_triangles.iter() {
@@ -83,6 +93,7 @@ fn draw_triangle(
     context.close_path();
 
     context.stroke();
+    // TODO: Fill with a random color at each depth
     // context.fill();
 
     Ok(())
