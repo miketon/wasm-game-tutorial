@@ -25,14 +25,18 @@ static DEPTH: AtomicUsize = AtomicUsize::new(5);
 // isn't supported in the current release, so our workaround is to
 // add a note to manually apply filter on file open (init)
 static LENGTH: AtomicU64 = AtomicU64::new(0);
+const LENGTH_DEFAULT: f64 = 600.0;
 
 struct TriangleConst;
 
-// TODO: expose these values to web interface button for users to change
 impl TriangleConst {
     // HACK: work around f_64.to_bits() not being stable
     pub fn init() {
-        Self::set_length(600.0); // Set the initial length
+        // Only if current length is invalid do we change length ...
+        // Else we will interfere with values passed through html ui
+        if Self::get_length() <= 0.0 {
+            Self::set_length(LENGTH_DEFAULT);
+        }
     }
     pub fn get_depth() -> usize {
         DEPTH.load(Ordering::Relaxed)
@@ -43,7 +47,12 @@ impl TriangleConst {
     }
 
     pub fn get_length() -> f64 {
-        f64::from_bits(LENGTH.load(Ordering::Relaxed))
+        let length = f64::from_bits(LENGTH.load(Ordering::Relaxed));
+        if length <= 0.0 {
+            LENGTH_DEFAULT
+        } else {
+            length
+        }
     }
 
     pub fn set_length(length: f64) {
@@ -51,18 +60,8 @@ impl TriangleConst {
     }
 }
 
-// TODO: Define a type alias for a triangle points
+// type alias for a triangle points
 type TrianglePoints = [(f64, f64); 3];
-
-#[wasm_bindgen]
-pub fn set_depth(depth: usize) {
-    TriangleConst::set_depth(depth);
-}
-
-#[wasm_bindgen]
-pub fn set_length(length: f64) {
-    TriangleConst::set_length(length);
-}
 
 #[wasm_bindgen]
 pub fn get_depth() -> usize {
@@ -70,8 +69,23 @@ pub fn get_depth() -> usize {
 }
 
 #[wasm_bindgen]
+pub fn set_depth(depth: usize) {
+    TriangleConst::set_depth(depth);
+}
+
+#[wasm_bindgen]
 pub fn get_length() -> f64 {
     TriangleConst::get_length()
+}
+
+#[wasm_bindgen]
+pub fn set_length(length: f64) {
+    // ensure only positive values
+    if length > 0.0 {
+        TriangleConst::set_length(length);
+    } else {
+        console::log_1(&JsValue::from_str("length must be positive"));
+    }
 }
 
 #[wasm_bindgen]
