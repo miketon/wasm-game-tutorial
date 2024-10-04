@@ -3,6 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <title>Rust and Webpack</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      canvas {
+        border: 1px solid #ccc;
+        display: block;
+        margin: 20px auto;
+      }
+      .controls {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+      .control-group {
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
   </head>
   <body>
     <header>
@@ -13,6 +36,17 @@
       <canvas id="canvas" width="600" height="600" tabindex="0">
         Your browser does not support the canvas element.
       </canvas>
+      <div class="controls">
+        <div class="control-group">
+          <label for="depth">Depth:</label>
+          <input type="number" id="depth" min="0" max="10" value="5" />
+        </div>
+        <div class="control-group">
+          <label for="length">Length:</label>
+          <input type="number" id="length" min="100" max="500" value="300" />
+        </div>
+        <button id="draw">Draw Triangle</button>
+      </div>
     </main>
     <script src="bundle.js"></script>
   </body>

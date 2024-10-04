@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
@@ -9,21 +10,76 @@ impl HtmlConst {
     const CONTEXT_2D: &'static str = "2d";
 }
 
+// Can't use static in an impl block ... here's why :
+// - a) static items are associated with the entire program not just a type
+// - b) impl blocks are for defining methods and associated functions for a
+// specific type, NOT for declaring program-wide data
+// - c) allowing statics in impl blocks adds confusion wrt scope and lifetime
+// of these variables
+// HACK: moving to the module level instead
+static DEPTH: AtomicUsize = AtomicUsize::new(5);
+// ELI5: f64.to_bits() is currently not stable as a const function
+// static LENGTH: AtomicU64 = AtomicU64::new(600.0_f64.to_bits());
+// So as a workaround we will set to 0.0 and initialize on main
+// PHOTOSHOP terms - this unstable feature is an experimental filter that
+// isn't supported in the current release, so our workaround is to
+// add a note to manually apply filter on file open (init)
+static LENGTH: AtomicU64 = AtomicU64::new(0);
+
 struct TriangleConst;
 
 // TODO: expose these values to web interface button for users to change
 impl TriangleConst {
-    const DEPTH: u8 = 5;
-    const LENGTH: f64 = 600.0;
+    // HACK: work around f_64.to_bits() not being stable
+    pub fn init() {
+        Self::set_length(600.0); // Set the initial length
+    }
+    pub fn get_depth() -> usize {
+        DEPTH.load(Ordering::Relaxed)
+    }
+
+    pub fn set_depth(depth: usize) {
+        DEPTH.store(depth, Ordering::Relaxed)
+    }
+
+    pub fn get_length() -> f64 {
+        f64::from_bits(LENGTH.load(Ordering::Relaxed))
+    }
+
+    pub fn set_length(length: f64) {
+        LENGTH.store(length.to_bits(), Ordering::Relaxed)
+    }
 }
 
 // TODO: Define a type alias for a triangle points
 type TrianglePoints = [(f64, f64); 3];
 
 #[wasm_bindgen]
+pub fn set_depth(depth: usize) {
+    TriangleConst::set_depth(depth);
+}
+
+#[wasm_bindgen]
+pub fn set_length(length: f64) {
+    TriangleConst::set_length(length);
+}
+
+#[wasm_bindgen]
+pub fn get_depth() -> usize {
+    TriangleConst::get_depth()
+}
+
+#[wasm_bindgen]
+pub fn get_length() -> f64 {
+    TriangleConst::get_length()
+}
+
+#[wasm_bindgen]
 pub fn main_js() -> Result<(), JsValue> {
     // setup better panic messages for debugging
     console_error_panic_hook::set_once();
+    // HACK: work around f_64.to_bits() not being stable
+    TriangleConst::init();
 
     // get context
     let window = window().expect("Failed to get window");
@@ -42,9 +98,9 @@ pub fn main_js() -> Result<(), JsValue> {
         .expect("context should be a CanvasRenderingContext2d");
 
     // generate and draw triangles
-    let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::LENGTH);
+    let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::get_length());
     console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinkis(&context, tri_lod_0_0, TriangleConst::DEPTH)?;
+    sierpinkis(&context, tri_lod_0_0, TriangleConst::get_depth())?;
 
     Ok(())
 }
@@ -52,20 +108,17 @@ pub fn main_js() -> Result<(), JsValue> {
 fn sierpinkis(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
-    depth: u8,
+    depth: usize,
 ) -> Result<(), JsValue> {
     // TODO: figure out why this doesn't print, but main_js log does print
     // console::log_1(&format!("[sierpinkis] {:?}", depth).into());
     // console::log_1(&JsValue::from_str(&format!("[sierpinkis] depth: {}", depth)));
-    // this prevents infinite recursion where u8 0 - 1 = 255
-    // because u8 is unsigned
-    // TODO: use usize instead of u8
     if depth == 0 {
         return Ok(());
     }
 
     draw_triangle(context, points)?;
-    if TriangleConst::DEPTH - depth == 1 {
+    if TriangleConst::get_depth() - depth == 1 {
         // debug draw each triangle point values
         debug_triangle_point_values(context, points)?;
     }
