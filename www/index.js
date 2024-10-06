@@ -16,20 +16,25 @@ const ELEMENT_IDS = {
   CANVAS: "canvas",
 };
 
+// object to store the elements
+const elements = {};
+
+const DELAY_MS = 250;
+
+// #region Main
 async function run() {
   try {
     document.getElementById(ELEMENT_IDS.OUTPUT).innerText =
       "0 Error Wasm World!";
     logMessage("Starting run function");
-    // get all elements and log if any are missing
-    const elements = Object.entries(ELEMENT_IDS).map(([key, id]) => [
-      key,
-      document.getElementById(id),
-    ]);
-    logMessage(
-      `Found [${elements.length}/${Object.keys(ELEMENT_IDS).length}] HTML elements`,
-    );
-    const missingElements = elements
+
+    // get all elements
+    Object.entries(ELEMENT_IDS).forEach(([key, id]) => {
+      elements[key] = document.getElementById(id);
+    });
+
+    // check and thow error if any element are missing
+    const missingElements = Object.entries(elements)
       .filter(([, element]) => !element)
       .map(([key]) => key);
 
@@ -37,46 +42,41 @@ async function run() {
       throw new Error(`Missing HTML elements: ${missingElements.join(",")}`);
     }
 
-    // Destructuring elements, skipping the OUTPUT element
-    // FIXED: Correct way to destructure the elements
+    // get values from public wasm-bindgen functions
+    elements.DEPTH.value = get_depth();
+    elements.LENGTH.value = get_length();
 
-    /** @type {HTMLInputElement} */
-    const depthInput = elements.find(([key]) => key === "DEPTH")[1];
-    /** @type {HTMLInputElement} */
-    const lengthInput = elements.find(([key]) => key === "LENGTH")[1];
-    const drawButton = elements.find(([key]) => key === "DRAW")[1];
-    const canvasElement = elements.find(([key]) => key === "CANVAS")[1];
-
-    // Log the type of each element
-    logMessage(`depthInput type: ${depthInput.constructor.name}`);
-    logMessage(`lengthInput type: ${lengthInput.constructor.name}`);
-    logMessage(`drawButton type: ${drawButton.constructor.name}`);
-    logMessage(`canvasElement type: ${canvasElement.constructor.name}`);
-
-    depthInput.value = get_depth();
-    lengthInput.value = get_length();
-
-    // interesting even drawButton listens to "change" as opposed to "click"
-    // TODO: Explain the tradeoff
-    [depthInput, lengthInput, drawButton].forEach((element) => {
-      logMessage("Adding : " + element.id);
-      element.addEventListener("input", updateTriangle, { passive: true });
+    [elements.DEPTH, elements.DRAW].forEach((element) => {
+      element.addEventListener("change", () => updateTriangle(elements), {
+        passive: true,
+      });
     });
 
-    updateTriangle();
+    // tune compute cost of rapid value change vs responsiveness
+    // - create a debounced version of updateTriangle
+    const debounceUpdateTriangle = debounce(
+      () => updateTriangle(elements),
+      DELAY_MS,
+    );
+
+    // - use debounced triangle update for input events
+    elements.LENGTH.addEventListener("input", debounceUpdateTriangle, {
+      passive: true,
+    });
+
+    updateTriangle(elements);
   } catch (error) {
     logMessage(`Error in run function: ${error.message}`, true);
   }
 }
 
 run().catch((error) => logMessage(`Unhandled error : ${error.message}`, true));
+// #endregion
 
-function updateTriangle() {
-  const depthInput = document.getElementById(ELEMENT_IDS.DEPTH);
-  const lengthInput = document.getElementById(ELEMENT_IDS.LENGTH);
-
-  const depth = parseInt(depthInput.value);
-  const length = parseFloat(lengthInput.value);
+// #region Draw
+function updateTriangle(elements) {
+  const depth = parseInt(elements.DEPTH.value);
+  const length = parseFloat(elements.LENGTH.value);
 
   // ensure these elements exist in HTML
   if (isNaN(depth) || isNaN(length)) {
@@ -88,13 +88,12 @@ function updateTriangle() {
   set_length(length);
 
   // Clear the canvas
-  clearCanvas();
+  clearCanvas(elements.CANVAS);
   // Draw the serpinski triangle
   main_js();
 }
 
-function clearCanvas() {
-  const canvas = document.getElementById(ELEMENT_IDS.CANVAS);
+function clearCanvas(canvas) {
   if (!canvas) {
     logMessage("Canvas element not found");
     return;
@@ -102,16 +101,31 @@ function clearCanvas() {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
+// #endregion
+
+// #region Utils
+function debounce(func, waitFor) {
+  let timeout = null;
+
+  return function (...args) {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(() => func(...args), waitFor);
+  };
+}
 
 function logMessage(message, isError = false) {
-  const outElement = document.getElementById(ELEMENT_IDS.OUTPUT);
   // append messages if Error
-  if (outElement && isError) {
-    outElement.innerText += message + "\n";
+  if (elements.OUTPUT && isError) {
+    elements.OUTPUT.innerText += `${message}\n`;
   }
+
+  message = `[index.js] ${message}`;
   if (isError) {
     console.error(message);
   } else {
     console.log(message);
   }
 }
+//#endregion
