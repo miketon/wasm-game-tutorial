@@ -222,6 +222,7 @@ dependencies = [
  "futures",
  "getrandom",
  "js-sys",
+ "once_cell",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

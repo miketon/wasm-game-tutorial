@@ -1,4 +1,5 @@
 use getrandom::getrandom;
+use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -6,8 +7,7 @@ use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
 
 // Represents three points of a triangle in 2D space
 type TrianglePoints = [(f64, f64); 3];
-// Represents a color in an RGB format
-// - ELI5: represent as u8 vs usize given it's 8bit 0-255 range
+// ELI5: Represent color as u8 vs usize given it's 8bit 0-255 range
 type Color = (u8, u8, u8);
 
 // Constants related to HTML elements
@@ -18,7 +18,7 @@ impl HtmlConst {
     const CONTEXT_2D: &'static str = "2d";
 }
 
-// Can't use static in an impl block ... here's why :
+// ELI5: Can't use static in an impl block ... here's why :
 // - a) static items are associated with the entire program not just a type
 // - b) impl blocks are for defining methods and associated functions for a
 // specific type, NOT for declaring program-wide data
@@ -28,25 +28,19 @@ impl HtmlConst {
 static DEPTH: AtomicUsize = AtomicUsize::new(5);
 // ELI5: f64.to_bits() is currently not stable as a const function
 // static LENGTH: AtomicU64 = AtomicU64::new(600.0_f64.to_bits());
-// So as a workaround we will set to 0.0 and initialize on main
-// PHOTOSHOP terms - this unstable feature is an experimental filter that
+// - PHOTOSHOP terms - this unstable feature is an experimental filter that
 // isn't supported in the current release, so our workaround is to
 // add a note to manually apply filter on file open (init)
-static LENGTH: AtomicU64 = AtomicU64::new(0);
+// - updated workaround, using once_cell instead of init
+// TODO: Explain ... why didn't we have to use a js version of once_cell like
+// we did with getrandom?
+static LENGTH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(600.0_f64.to_bits()));
 const LENGTH_DEFAULT: f64 = 600.0;
 
 // Constants and utility functions for triangle operations
 struct TriangleConst;
 
 impl TriangleConst {
-    // HACK: work around f_64.to_bits() not being stable
-    pub fn init() {
-        // Only if current length is invalid do we change length ...
-        // Else we will interfere with values passed through html ui
-        if Self::get_length() <= 0.0 {
-            Self::set_length(LENGTH_DEFAULT);
-        }
-    }
     pub fn get_depth() -> usize {
         DEPTH.load(Ordering::Relaxed)
     }
@@ -107,8 +101,6 @@ pub fn set_length(length: f64) {
 pub fn main_js() -> Result<(), JsValue> {
     // setup better panic messages for debugging
     console_error_panic_hook::set_once();
-    // HACK: work around f_64.to_bits() not being stable
-    TriangleConst::init();
 
     // get context
     let window = window().expect("Failed to get window");
@@ -129,7 +121,7 @@ pub fn main_js() -> Result<(), JsValue> {
     // generate and draw triangles
     let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::get_length());
     console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinki(
+    sierpinski(
         &context,
         tri_lod_0_0,
         (0, 255, 255),
@@ -139,7 +131,7 @@ pub fn main_js() -> Result<(), JsValue> {
     Ok(())
 }
 
-fn sierpinki(
+fn sierpinski(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
     color: Color,
@@ -157,7 +149,7 @@ fn sierpinki(
 
     let sub_triangles = compute_sub_triangles(points);
     for sub_triangle in sub_triangles.iter() {
-        sierpinki(context, *sub_triangle, random_color(), depth - 1)?;
+        sierpinski(context, *sub_triangle, random_color(), depth - 1)?;
     }
 
     Ok(())
@@ -215,7 +207,12 @@ fn midpoint(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
 // TODO: is there a way to get brighter colors as depth increases?
 fn random_color() -> Color {
     let mut buf = [0u8; 3];
+    // getrandom is designed to fill a buffer with random bytes
+    // - it's a low level function serves as a foundation for other random
+    // number generation tasks
+    // - it should be fast and non blocking
     getrandom(&mut buf).expect("Failed to generate random Color");
+    // returns the buffer filled with random bytes
     (buf[0], buf[1], buf[2])
 }
 
