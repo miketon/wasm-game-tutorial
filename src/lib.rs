@@ -1,7 +1,12 @@
+use getrandom::getrandom;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
+
+// type aliases
+type TrianglePoints = [(f64, f64); 3];
+type Color = (usize, usize, usize);
 
 struct HtmlConst;
 
@@ -60,9 +65,6 @@ impl TriangleConst {
     }
 }
 
-// type alias for a triangle points
-type TrianglePoints = [(f64, f64); 3];
-
 #[wasm_bindgen]
 pub fn get_depth() -> usize {
     TriangleConst::get_depth()
@@ -114,7 +116,12 @@ pub fn main_js() -> Result<(), JsValue> {
     // generate and draw triangles
     let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::get_length());
     console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinkis(&context, tri_lod_0_0, TriangleConst::get_depth())?;
+    sierpinkis(
+        &context,
+        tri_lod_0_0,
+        (0, 255, 255),
+        TriangleConst::get_depth(),
+    )?;
 
     Ok(())
 }
@@ -122,6 +129,7 @@ pub fn main_js() -> Result<(), JsValue> {
 fn sierpinkis(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
+    color: Color,
     depth: usize,
 ) -> Result<(), JsValue> {
     // TODO: figure out why this doesn't print, but main_js log does print
@@ -131,7 +139,7 @@ fn sierpinkis(
         return Ok(());
     }
 
-    draw_triangle(context, points)?;
+    draw_triangle(context, points, color)?;
     if TriangleConst::get_depth() - depth == 1 {
         // debug draw each triangle point values
         debug_triangle_point_values(context, points)?;
@@ -139,7 +147,7 @@ fn sierpinkis(
 
     let sub_triangles = compute_sub_triangles(points);
     for sub_triangle in sub_triangles.iter() {
-        sierpinkis(context, *sub_triangle, depth - 1)?;
+        sierpinkis(context, *sub_triangle, random_color(), depth - 1)?;
     }
 
     Ok(())
@@ -148,6 +156,7 @@ fn sierpinkis(
 fn draw_triangle(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
+    color: Color,
 ) -> Result<(), JsValue> {
     // destructuring for readability
     let [top, left, right] = points;
@@ -161,7 +170,9 @@ fn draw_triangle(
 
     context.stroke();
     // TODO: Fill with a random color at each depth
-    // context.fill();
+    let color_string = format!("rgb({}, {}, {})", color.0, color.1, color.2);
+    context.set_fill_style(&JsValue::from_str(&color_string));
+    context.fill();
 
     Ok(())
 }
@@ -190,6 +201,12 @@ fn compute_sub_triangles(points: TrianglePoints) -> [TrianglePoints; 3] {
 
 fn midpoint(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
+}
+
+fn random_color() -> Color {
+    let mut buf = [0u8; 3];
+    getrandom(&mut buf).expect("Failed to generate random Color");
+    (buf[0] as usize, buf[1] as usize, buf[2] as usize)
 }
 
 fn debug_triangle_point_values(
