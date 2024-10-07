@@ -4,10 +4,13 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
 
-// type aliases
+// Represents three points of a triangle in 2D space
 type TrianglePoints = [(f64, f64); 3];
-type Color = (usize, usize, usize);
+// Represents a color in an RGB format
+// - ELI5: represent as u8 vs usize given it's 8bit 0-255 range
+type Color = (u8, u8, u8);
 
+// Constants related to HTML elements
 struct HtmlConst;
 
 impl HtmlConst {
@@ -32,6 +35,7 @@ static DEPTH: AtomicUsize = AtomicUsize::new(5);
 static LENGTH: AtomicU64 = AtomicU64::new(0);
 const LENGTH_DEFAULT: f64 = 600.0;
 
+// Constants and utility functions for triangle operations
 struct TriangleConst;
 
 impl TriangleConst {
@@ -65,21 +69,26 @@ impl TriangleConst {
     }
 }
 
+/// Gets the depth of the Sierpinski triangle
 #[wasm_bindgen]
 pub fn get_depth() -> usize {
     TriangleConst::get_depth()
 }
 
+/// Sets the depth of the Sierpinski triangle
 #[wasm_bindgen]
 pub fn set_depth(depth: usize) {
     TriangleConst::set_depth(depth);
 }
 
+/// Gets the length of the triangle's sides
 #[wasm_bindgen]
 pub fn get_length() -> f64 {
     TriangleConst::get_length()
 }
 
+/// Sets the length of the triangle's sides
+/// - Only accepts positive values
 #[wasm_bindgen]
 pub fn set_length(length: f64) {
     // ensure only positive values
@@ -90,6 +99,10 @@ pub fn set_length(length: f64) {
     }
 }
 
+/// Main entry for Webassembly module
+/// - initializes canvas
+/// - setups context
+/// - starts drawing
 #[wasm_bindgen]
 pub fn main_js() -> Result<(), JsValue> {
     // setup better panic messages for debugging
@@ -116,7 +129,7 @@ pub fn main_js() -> Result<(), JsValue> {
     // generate and draw triangles
     let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::get_length());
     console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinkis(
+    sierpinki(
         &context,
         tri_lod_0_0,
         (0, 255, 255),
@@ -126,15 +139,12 @@ pub fn main_js() -> Result<(), JsValue> {
     Ok(())
 }
 
-fn sierpinkis(
+fn sierpinki(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
     color: Color,
     depth: usize,
 ) -> Result<(), JsValue> {
-    // TODO: figure out why this doesn't print, but main_js log does print
-    // console::log_1(&format!("[sierpinkis] {:?}", depth).into());
-    // console::log_1(&JsValue::from_str(&format!("[sierpinkis] depth: {}", depth)));
     if depth == 0 {
         return Ok(());
     }
@@ -147,7 +157,7 @@ fn sierpinkis(
 
     let sub_triangles = compute_sub_triangles(points);
     for sub_triangle in sub_triangles.iter() {
-        sierpinkis(context, *sub_triangle, random_color(), depth - 1)?;
+        sierpinki(context, *sub_triangle, random_color(), depth - 1)?;
     }
 
     Ok(())
@@ -169,7 +179,6 @@ fn draw_triangle(
     context.close_path();
 
     context.stroke();
-    // TODO: Fill with a random color at each depth
     let color_string = format!("rgb({}, {}, {})", color.0, color.1, color.2);
     context.set_fill_style(&JsValue::from_str(&color_string));
     context.fill();
@@ -203,10 +212,11 @@ fn midpoint(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
 }
 
+// TODO: is there a way to get brighter colors as depth increases?
 fn random_color() -> Color {
     let mut buf = [0u8; 3];
     getrandom(&mut buf).expect("Failed to generate random Color");
-    (buf[0] as usize, buf[1] as usize, buf[2] as usize)
+    (buf[0], buf[1], buf[2])
 }
 
 fn debug_triangle_point_values(

@@ -47,7 +47,8 @@ async function run() {
     elements.LENGTH.value = get_length();
 
     [elements.DEPTH, elements.DRAW].forEach((element) => {
-      element.addEventListener("change", () => updateTriangle(elements), {
+      // update to "click" becuase with "change" button click would NOT redraw
+      element.addEventListener("click", () => updateTriangle(elements), {
         passive: true,
       });
     });
