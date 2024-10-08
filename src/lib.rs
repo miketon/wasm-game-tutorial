@@ -1,3 +1,4 @@
+// ==================== Imports ====================
 use getrandom::getrandom;
 use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -5,11 +6,13 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
 
+// ==================== Types ====================
 // Represents three points of a triangle in 2D space
 type TrianglePoints = [(f64, f64); 3];
 // ELI5: Represent color as u8 vs usize given it's 8bit 0-255 range
 type Color = (u8, u8, u8);
 
+// ==================== Module ====================
 // Constants related to HTML elements
 struct HtmlConst;
 
@@ -63,36 +66,7 @@ impl TriangleConst {
     }
 }
 
-/// Gets the depth of the Sierpinski triangle
-#[wasm_bindgen]
-pub fn get_depth() -> usize {
-    TriangleConst::get_depth()
-}
-
-/// Sets the depth of the Sierpinski triangle
-#[wasm_bindgen]
-pub fn set_depth(depth: usize) {
-    TriangleConst::set_depth(depth);
-}
-
-/// Gets the length of the triangle's sides
-#[wasm_bindgen]
-pub fn get_length() -> f64 {
-    TriangleConst::get_length()
-}
-
-/// Sets the length of the triangle's sides
-/// - Only accepts positive values
-#[wasm_bindgen]
-pub fn set_length(length: f64) {
-    // ensure only positive values
-    if length > 0.0 {
-        TriangleConst::set_length(length);
-    } else {
-        console::log_1(&JsValue::from_str("length must be positive"));
-    }
-}
-
+// ==================== Main Functions ====================
 /// Main entry for Webassembly module
 /// - initializes canvas
 /// - setups context
@@ -131,6 +105,38 @@ pub fn main_js() -> Result<(), JsValue> {
     Ok(())
 }
 
+// ==================== WASM-bindgen Functions ====================
+/// Gets the depth of the Sierpinski triangle
+#[wasm_bindgen]
+pub fn get_depth() -> usize {
+    TriangleConst::get_depth()
+}
+
+/// Sets the depth of the Sierpinski triangle
+#[wasm_bindgen]
+pub fn set_depth(depth: usize) {
+    TriangleConst::set_depth(depth);
+}
+
+/// Gets the length of the triangle's sides
+#[wasm_bindgen]
+pub fn get_length() -> f64 {
+    TriangleConst::get_length()
+}
+
+/// Sets the length of the triangle's sides
+/// - Only accepts positive values
+#[wasm_bindgen]
+pub fn set_length(length: f64) {
+    // ensure only positive values
+    if length > 0.0 {
+        TriangleConst::set_length(length);
+    } else {
+        console::log_1(&JsValue::from_str("length must be positive"));
+    }
+}
+
+// ==================== Utility Functions ====================
 fn sierpinski(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
@@ -180,10 +186,12 @@ fn draw_triangle(
 
 /// return 3 points of equilateral triangle given length
 fn compute_triangle_points(length: f64) -> TrianglePoints {
+    // multi by 0.5 to avoid divide by zero
+    let height = length * 3.0_f64.sqrt() * 0.5;
     [
-        (length / 2.0, 0.0), // top
-        (0.0, length),       // bottom-left
-        (length, length),    // botttom-right
+        (0.0, height),       // bottom-left
+        (length, height),    // botttom-right
+        (length * 0.5, 0.0), // top
     ]
 }
 
@@ -229,4 +237,51 @@ fn debug_triangle_point_values(
     context.fill_text(&format!("{:?}", right), right.0, right.1)?;
 
     Ok(())
+}
+
+// ==================== Tests ====================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_midpoint() {
+        let a = (0.0, 0.0);
+        let b = (10.0, 20.0);
+        let mid = midpoint(a, b);
+
+        assert_relative_eq!(mid.0, 5.0);
+        assert_relative_eq!(mid.1, 10.0);
+    }
+
+    #[test]
+    fn test_compute_triangle_points() {
+        let length = 100.0;
+        let points = compute_triangle_points(length);
+
+        assert_relative_eq!(points[0].0, 0.0);
+        assert_relative_eq!(points[0].1, 86.60254037844387);
+        assert_relative_eq!(points[1].0, 100.0);
+        assert_relative_eq!(points[1].1, 86.60254037844387);
+        assert_relative_eq!(points[2].0, 50.0);
+        assert_relative_eq!(points[2].1, 0.0);
+    }
+
+    #[test]
+    fn test_compute_sub_triangles() {
+        let parent = [(0.0, 100.0), (100.0, 100.0), (50.0, 13.397459621556151)];
+
+        let sub_triangles = compute_sub_triangles(parent);
+
+        // Check the first sub-triangle
+        assert_relative_eq!(sub_triangles[0][0].0, 0.0);
+        assert_relative_eq!(sub_triangles[0][0].1, 100.0);
+        assert_relative_eq!(sub_triangles[0][1].0, 50.0);
+        assert_relative_eq!(sub_triangles[0][1].1, 100.0);
+        assert_relative_eq!(sub_triangles[0][2].0, 25.0);
+        assert_relative_eq!(sub_triangles[0][2].1, 56.69872981077808);
+
+        // You can add similar checks for the other two sub-triangles
+    }
 }
