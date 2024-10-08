@@ -6,21 +6,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
 
-// ==================== Types ====================
-// Represents three points of a triangle in 2D space
-type TrianglePoints = [(f64, f64); 3];
-// ELI5: Represent color as u8 vs usize given it's 8bit 0-255 range
-type Color = (u8, u8, u8);
-
-// ==================== Module ====================
-// Constants related to HTML elements
-struct HtmlConst;
-
-impl HtmlConst {
-    const CANVAS_ID: &'static str = "canvas";
-    const CONTEXT_2D: &'static str = "2d";
-}
-
+// ==================== Constants ====================
 // ELI5: Can't use static in an impl block ... here's why :
 // - a) static items are associated with the entire program not just a type
 // - b) impl blocks are for defining methods and associated functions for a
@@ -37,13 +23,30 @@ static DEPTH: AtomicUsize = AtomicUsize::new(5);
 // - updated workaround, using once_cell instead of init
 // TODO: Explain ... why didn't we have to use a js version of once_cell like
 // we did with getrandom?
-static LENGTH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(600.0_f64.to_bits()));
 const LENGTH_DEFAULT: f64 = 600.0;
+static LENGTH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(LENGTH_DEFAULT.to_bits()));
+
+// ==================== Types ====================
+// Represents three points of a triangle in 2D space
+type TrianglePoints = [(f64, f64); 3];
+// ELI5: Represent color as u8 vs usize given it's 8bit 0-255 range
+type Color = (u8, u8, u8);
+
+// ==================== Module ====================
+// ELI5: When to use modules vs structs :
+// - No Self : managing CONSTANTS and STATELESS functions doesn't need instance
+// - more idiomatic way to handle triangle GEOMETRY and html STANDARDS
+
+// Constants related to HTML elements
+mod html {
+    pub const CANVAS_ID: &str = "canvas";
+    pub const CONTEXT_2D: &str = "2d";
+}
 
 // Constants and utility functions for triangle operations
-struct TriangleConst;
+mod triangle {
+    use super::*; // brings outer surrounding scope's items into this mod
 
-impl TriangleConst {
     pub fn get_depth() -> usize {
         DEPTH.load(Ordering::Relaxed)
     }
@@ -81,26 +84,21 @@ pub fn main_js() -> Result<(), JsValue> {
     // TODO-done: unwrap -> expect for more explicit error messages
     let document = window.document().expect("document on window required");
     let canvas = document
-        .get_element_by_id(HtmlConst::CANVAS_ID)
+        .get_element_by_id(html::CANVAS_ID)
         .expect("canvas element required")
         .dyn_into::<HtmlCanvasElement>()
         .expect("HtmlCanvasElement required");
     let context = canvas
-        .get_context(HtmlConst::CONTEXT_2D)
+        .get_context(html::CONTEXT_2D)
         .expect("2d context required")
         .expect("context should exist")
         .dyn_into::<CanvasRenderingContext2d>()
         .expect("context should be a CanvasRenderingContext2d");
 
     // generate and draw triangles
-    let tri_lod_0_0: TrianglePoints = compute_triangle_points(TriangleConst::get_length());
+    let tri_lod_0_0: TrianglePoints = compute_triangle_points(triangle::get_length());
     console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinski(
-        &context,
-        tri_lod_0_0,
-        (0, 255, 255),
-        TriangleConst::get_depth(),
-    )?;
+    sierpinski(&context, tri_lod_0_0, (0, 255, 255), triangle::get_depth())?;
 
     Ok(())
 }
@@ -109,19 +107,19 @@ pub fn main_js() -> Result<(), JsValue> {
 /// Gets the depth of the Sierpinski triangle
 #[wasm_bindgen]
 pub fn get_depth() -> usize {
-    TriangleConst::get_depth()
+    triangle::get_depth()
 }
 
 /// Sets the depth of the Sierpinski triangle
 #[wasm_bindgen]
 pub fn set_depth(depth: usize) {
-    TriangleConst::set_depth(depth);
+    triangle::set_depth(depth);
 }
 
 /// Gets the length of the triangle's sides
 #[wasm_bindgen]
 pub fn get_length() -> f64 {
-    TriangleConst::get_length()
+    triangle::get_length()
 }
 
 /// Sets the length of the triangle's sides
@@ -130,7 +128,7 @@ pub fn get_length() -> f64 {
 pub fn set_length(length: f64) {
     // ensure only positive values
     if length > 0.0 {
-        TriangleConst::set_length(length);
+        triangle::set_length(length);
     } else {
         console::log_1(&JsValue::from_str("length must be positive"));
     }
@@ -148,7 +146,7 @@ fn sierpinski(
     }
 
     draw_triangle(context, points, color)?;
-    if TriangleConst::get_depth() - depth == 1 {
+    if triangle::get_depth() - depth == 1 {
         // debug draw each triangle point values
         debug_triangle_point_values(context, points)?;
     }
