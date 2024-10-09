@@ -32,7 +32,7 @@ type TrianglePoints = [(f64, f64); 3];
 // ELI5: Represent color as u8 vs usize given it's 8bit 0-255 range
 type Color = (u8, u8, u8);
 
-// ==================== Module ====================
+// ==================== Modules ====================
 // ELI5: When to use modules vs structs :
 // - No Self : managing CONSTANTS and STATELESS functions doesn't need instance
 // - more idiomatic way to handle triangle GEOMETRY and html STANDARDS
@@ -69,6 +69,29 @@ mod triangle {
     }
 }
 
+// ==================== Structs ====================
+#[derive(Debug, Clone, Copy)]
+struct Rect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl Rect {
+    fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+    fn center(&self) -> (f64, f64) {
+        (self.x + self.width * 0.5, self.y + self.height * 0.5)
+    }
+}
+
 // ==================== Main Functions ====================
 /// Main entry for Webassembly module
 /// - initializes canvas
@@ -95,10 +118,21 @@ pub fn main_js() -> Result<(), JsValue> {
         .dyn_into::<CanvasRenderingContext2d>()
         .expect("context should be a CanvasRenderingContext2d");
 
+    // create a Rect representing the canvas
+    let canvas_rect = Rect::new(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
+
     // generate and draw triangles
-    let tri_lod_0_0: TrianglePoints = compute_triangle_points(triangle::get_length());
-    console::log_1(&format!("[main_js] {:?}", tri_lod_0_0).into());
-    sierpinski(&context, tri_lod_0_0, (0, 255, 255), triangle::get_depth())?;
+    let base_triangle: TrianglePoints = compute_triangle_points(triangle::get_length());
+
+    // center the triangle
+    let centered_triangle = center_triangle(base_triangle, canvas_rect);
+    console::log_1(&format!("[main_js] {:?}", base_triangle).into());
+    sierpinski(
+        &context,
+        centered_triangle,
+        random_color(),
+        triangle::get_depth(),
+    )?;
 
     Ok(())
 }
@@ -135,6 +169,9 @@ pub fn set_length(length: f64) {
 }
 
 // ==================== Utility Functions ====================
+// TODO: curren implementation is recursive, consider :
+// - iterative implementation ... with VecDeque
+// - memoization ... with Hashing ?
 fn sierpinski(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
@@ -208,6 +245,34 @@ fn compute_sub_triangles(points: TrianglePoints) -> [TrianglePoints; 3] {
 
 fn midpoint(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
+}
+
+fn center_triangle(points: TrianglePoints, canvas: Rect) -> TrianglePoints {
+    let [top, left, right] = points;
+
+    // Calculate the bounding box of the triangle
+    let min_x = left.0.min(right.0).min(top.0);
+    let max_x = left.0.max(right.0).max(top.0);
+    let min_y = top.1.min(left.1).min(right.1);
+    let max_y = top.1.max(left.1).max(right.1);
+
+    // Calculate the center of the triangle
+    let triangle_center_x = (min_x + max_x) * 0.5;
+    let triangle_center_y = (min_y + max_y) * 0.5;
+
+    // Get the center of the canvas
+    let (canvas_center_x, canvas_center_y) = canvas.center();
+
+    // Calculate the offset to move the triangle to center of canvas
+    let offset_x = canvas_center_x - triangle_center_x;
+    let offset_y = canvas_center_y - triangle_center_y;
+
+    // Apply the offset to all TrianglePoints
+    [
+        (top.0 + offset_x, top.1 + offset_y),
+        (left.0 + offset_x, left.1 + offset_y),
+        (right.0 + offset_x, right.1 + offset_y),
+    ]
 }
 
 // TODO: is there a way to get brighter colors as depth increases?
