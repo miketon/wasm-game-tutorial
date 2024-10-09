@@ -4,6 +4,12 @@ use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+// ELI5: Javascript properties are public and web_sys :
+// - a) just generates setter and getter functions
+// - b) these functions take JsValue objects that represent objects owned by
+// Javascript
+// - c) read documentation for corresponding functions to check what types are
+// needed when translating from Rust to Javascript
 use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
 
 // ==================== Constants ====================
@@ -36,6 +42,7 @@ type Color = (u8, u8, u8);
 // ELI5: When to use modules vs structs :
 // - No Self : managing CONSTANTS and STATELESS functions doesn't need instance
 // - more idiomatic way to handle triangle GEOMETRY and html STANDARDS
+// - control @function level public/private namespace
 
 // Constants related to HTML elements
 mod html {
@@ -189,8 +196,10 @@ fn sierpinski(
     }
 
     let sub_triangles = compute_sub_triangles(points);
+    //we want a shared color for each sub-triangle
+    let color_lod = random_color();
     for sub_triangle in sub_triangles.iter() {
-        sierpinski(context, *sub_triangle, random_color(), depth - 1)?;
+        sierpinski(context, *sub_triangle, color_lod, depth - 1)?;
     }
 
     Ok(())
@@ -212,8 +221,9 @@ fn draw_triangle(
     context.close_path();
 
     context.stroke();
-    let color_string = format!("rgb({}, {}, {})", color.0, color.1, color.2);
-    context.set_fill_style(&JsValue::from_str(&color_string));
+    // fill style expects a string of format "rgb(255, 0 ,255)"
+    let color_str = format!("rgb({}, {}, {})", color.0, color.1, color.2);
+    context.set_fill_style(&JsValue::from_str(&color_str));
     context.fill();
 
     Ok(())
@@ -291,13 +301,27 @@ fn debug_triangle_point_values(
     context: &CanvasRenderingContext2d,
     points: TrianglePoints,
 ) -> Result<(), JsValue> {
-    let offset = 10.0;
+    let offset = 20.0;
     // destructuring for readability
-    let [top, left, right] = points.map(|(x, y)| (x, y + offset));
+    // - also rounding to whole number on print
+    let [top, left, right] = points.map(|(x, y)| {
+        (
+            (x + offset).round() as i32,
+            (y + offset * 0.75).round() as i32,
+        )
+    });
     // draw values as text for each point
-    context.fill_text(&format!("{:?}", top), top.0, top.1)?;
-    context.fill_text(&format!("{:?}", left), left.0, left.1)?;
-    context.fill_text(&format!("{:?}", right), right.0, right.1)?;
+    context.fill_text(&format!("{} {}", top.0, top.1), top.0 as f64, top.1 as f64)?;
+    context.fill_text(
+        &format!("{} {}", left.0, left.1),
+        left.0 as f64,
+        left.1 as f64,
+    )?;
+    context.fill_text(
+        &format!("{} {}", right.0, right.1),
+        right.0 as f64,
+        right.1 as f64,
+    )?;
 
     Ok(())
 }
