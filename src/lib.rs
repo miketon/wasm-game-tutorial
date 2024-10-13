@@ -140,18 +140,39 @@ pub fn main_js() -> Result<(), JsValue> {
         triangle::get_depth(),
     )?;
 
-    // draw sprite
-    let context_clone = context.clone();
-    wasm_bindgen_futures::spawn_local(async move{
-        let image = HtmlImageElement::new().expect("HtmlImageElement required");
-        let callback = Closure::once(move || {
-            console::log_1(&JsValue::from_str("[image] done loading"));
-        });
-        image.set_onload(Some(callback.as_ref().unchecked_ref()));
-        callback.forget();
-        image.set_src("Idle (1).png");
-        let _ = context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0);
-    });
+    // Load and Draw sprite
+    // clone to move a context reference into the async block
+    let context_clone = context.clone(); 
+    // spawns a new asynchronous task using wasm_bindgen_futures
+    wasm_bindgen_futures::spawn_local(
+        // 'move' keyword indicates that the closure will take ownership of 
+        // any variables it uses from the surrounding scope
+        async move {
+            let image = HtmlImageElement::new().expect("HtmlImageElement required");
+            // Creates a closure that will be called once the image is loaded
+            // - in this case, it logs a message indicating load completed
+            let callback = Closure::once(move || {
+                console::log_1(&JsValue::from_str("[image] done loading"));
+            });
+            // Sets the onload event handler for the image
+            image.set_onload(Some(callback.as_ref()
+                // unchecked_ref is used to convert the call back to the 
+                // correct type expected by 'set_onload'
+                .unchecked_ref()));
+            // Because Javascript now owns the closure : 
+            // - we MUST prevent Rust from cleaning up the closure when it 
+            // goes out of scope
+            // - 'forget()' accomplishes this
+            // TODO: address the fact that this memory is NEVER reclaimed
+            callback.forget();
+            // start loading the image by setting the source to our file name
+            image.set_src("Idle (1).png");
+            // attempt to draw image at co-ordinate input
+            // FIXME: this might not work as expected if the image isn't 
+            // loaded yet
+            let _ = context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0);
+        }
+    );
 
     Ok(())
 }
