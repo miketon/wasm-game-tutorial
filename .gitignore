@@ -1,3 +1,27 @@
 /target
 /*.session
 /*.svg
+
+# Node modules
+/www/node_modules/
+
+# Build output
+/www/dist/
+/pkg/
+
+# Rust
+/target/
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Editor files
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Optional: Package lock file (team decision)
+# /www/package-lock.json

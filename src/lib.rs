@@ -10,12 +10,13 @@ use wasm_bindgen::JsCast;
 // Javascript
 // - c) read documentation for corresponding functions to check what types are
 // needed when translating from Rust to Javascript
-use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement};
+// TODO: find out how to signal code formatter to ignore this line
+use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 
 // ==================== Constants ====================
 // ELI5: Can't use static in an impl block ... here's why :
 // - a) static items are associated with the entire program not just a type
-// - b) impl blocks are for defining methods and associated functions for a
+// - b) impl blocks are for defining methods and associated functfions for a
 // specific type, NOT for declaring program-wide data
 // - c) allowing statics in impl blocks adds confusion wrt scope and lifetime
 // of these variables
@@ -127,10 +128,8 @@ pub fn main_js() -> Result<(), JsValue> {
 
     // create a Rect representing the canvas
     let canvas_rect = Rect::new(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
-
     // generate and draw triangles
     let base_triangle: TrianglePoints = compute_triangle_points(triangle::get_length());
-
     // center the triangle
     let centered_triangle = center_triangle(base_triangle, canvas_rect);
     console::log_1(&format!("[main_js] {:?}", base_triangle).into());
@@ -140,6 +139,19 @@ pub fn main_js() -> Result<(), JsValue> {
         random_color(),
         triangle::get_depth(),
     )?;
+
+    // draw sprite
+    let context_clone = context.clone();
+    wasm_bindgen_futures::spawn_local(async move{
+        let image = HtmlImageElement::new().expect("HtmlImageElement required");
+        let callback = Closure::once(move || {
+            console::log_1(&JsValue::from_str("[image] done loading"));
+        });
+        image.set_onload(Some(callback.as_ref().unchecked_ref()));
+        callback.forget();
+        image.set_src("Idle (1).png");
+        let _ = context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0);
+    });
 
     Ok(())
 }
