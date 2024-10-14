@@ -1,6 +1,6 @@
 // ==================== Imports ====================
-use getrandom::getrandom;
-use once_cell::sync::Lazy;
+use getrandom::getrandom;  // js shim because access to system entropy needed
+use once_cell::sync::Lazy; // no js shim needed because it's pure Rust impl
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -10,8 +10,14 @@ use wasm_bindgen::JsCast;
 // Javascript
 // - c) read documentation for corresponding functions to check what types are
 // needed when translating from Rust to Javascript
-// TODO: find out how to signal code formatter to ignore this line
-use web_sys::{console, window, CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
+#[rustfmt::skip]
+use web_sys::{
+    console, 
+    window, 
+    CanvasRenderingContext2d, 
+    HtmlCanvasElement, 
+    HtmlImageElement
+};
 
 // ==================== Constants ====================
 // ELI5: Can't use static in an impl block ... here's why :
@@ -28,8 +34,6 @@ static DEPTH: AtomicUsize = AtomicUsize::new(5);
 // isn't supported in the current release, so our workaround is to
 // add a note to manually apply filter on file open (init)
 // - updated workaround, using once_cell instead of init
-// TODO: Explain ... why didn't we have to use a js version of once_cell like
-// we did with getrandom?
 const LENGTH_DEFAULT: f64 = 600.0;
 static LENGTH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(LENGTH_DEFAULT.to_bits()));
 
@@ -143,16 +147,41 @@ pub fn main_js() -> Result<(), JsValue> {
     // Load and Draw sprite
     // clone to move a context reference into the async block
     let context_clone = context.clone(); 
-    // spawns a new asynchronous task using wasm_bindgen_futures
+    // spawns a new asynchronous task in local thread, for web assembly 
+    // environment, using wasm_bindgen_futures
     wasm_bindgen_futures::spawn_local(
-        // 'move' keyword indicates that the closure will take ownership of 
+        // starts an asynchronous closure
+        // - 'move' keyword indicates that the closure will take ownership of 
         // any variables it uses from the surrounding scope
         async move {
             let image = HtmlImageElement::new().expect("HtmlImageElement required");
+
+            // creates a one-shot channel, it's a single-use channel between
+            // asynchronous tasks
+            // ELI5: help me understand this
+            // ANSWER : This helps coordinate actions between different parts 
+            // of your program, especially when one part needs to wait for 
+            // another part to finish something.
+            // Here's how it works:
+            // - The channel::<()>() function creates this special walkie-talkie set.
+            // - It gives you two parts:
+            //  - tx (transmitter): This is your part of the walkie-talkie. 
+            //  You'll use this to send the message.
+            //  - rx (receiver): This is your friend's part. They'll use this 
+            //  to listen for your message.
+            //  The <()> part means that the message you're sending is very 
+            //  simple, just a signal that means "I'm done!"
+            // - You can only use this walkie-talkie set once. After you send 
+            // a message, it stops working.
+            let (tx, rx) = futures::channel::oneshot::channel::<()>();
+
             // Creates a closure that will be called once the image is loaded
             // - in this case, it logs a message indicating load completed
             let callback = Closure::once(move || {
                 console::log_1(&JsValue::from_str("[image] done loading"));
+                // send signals to one-shot channel that task completed
+                // - walkie talkie listeners will get this message
+                let _ = tx.send(());
             });
             // Sets the onload event handler for the image
             image.set_onload(Some(callback.as_ref()
@@ -163,14 +192,20 @@ pub fn main_js() -> Result<(), JsValue> {
             // - we MUST prevent Rust from cleaning up the closure when it 
             // goes out of scope
             // - 'forget()' accomplishes this
-            // TODO: address the fact that this memory is NEVER reclaimed
+            // FIXME: address the fact that this memory is NEVER reclaimed
             callback.forget();
             // start loading the image by setting the source to our file name
             image.set_src("Idle (1).png");
             // attempt to draw image at co-ordinate input
-            // FIXME: this might not work as expected if the image isn't 
-            // loaded yet
-            let _ = context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0);
+            
+            // wait for image to load - (invisible progress bar)
+            // - pauses execution until signal is received in one-shot channel
+            // - walkie talkie are cleared because it was one-shot
+            let _ = rx.await;
+
+            // now draw image after waiting for it to load ^
+            context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0)
+                .expect("Failed to draw image");
         }
     );
 
@@ -209,7 +244,7 @@ pub fn set_length(length: f64) {
 }
 
 // ==================== Utility Functions ====================
-// TODO: curren implementation is recursive, consider :
+// TODO: current implementation is recursive, consider :
 // - iterative implementation ... with VecDeque
 // - memoization ... with Hashing ?
 fn sierpinski(
