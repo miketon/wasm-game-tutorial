@@ -156,8 +156,8 @@ pub fn main_js() -> Result<(), JsValue> {
         async move {
             let image = HtmlImageElement::new().expect("HtmlImageElement required");
 
-            // creates a one-shot channel, it's a single-use channel between
-            // asynchronous tasks
+            // creates a one-shot channel : 
+            // - it's a single-use channel between asynchronous tasks
             // ELI5: help me understand this
             // ANSWER : This helps coordinate actions between different parts 
             // of your program, especially when one part needs to wait for 
@@ -173,35 +173,37 @@ pub fn main_js() -> Result<(), JsValue> {
             //  simple, just a signal that means "I'm done!"
             // - You can only use this walkie-talkie set once. After you send 
             // a message, it stops working.
-            let (tx, rx) = futures::channel::oneshot::channel::<()>();
+            let (success_tx, success_rx) = futures::channel::oneshot::channel::<()>();
 
             // Creates a closure that will be called once the image is loaded
             // - in this case, it logs a message indicating load completed
+            // - because a one-shot channel is moved into a closure, this 
+            // entire closure immediately becomes a FnOnce ... see NOTE inside
+            // - though Closure::once() explicitly specifies a FnOnce closure
             let callback = Closure::once(move || {
                 console::log_1(&JsValue::from_str("[image] done loading"));
                 // send signals to one-shot channel that task completed
                 // - walkie talkie listeners will get this message
-                let _ = tx.send(());
+                // NOTE: closure is FnOnce ONLY if one-shot channel calls send()
+                // What if send is called conditionally? 
+                // - The mere possibility of calling it makes the closure 
+                // FnOnce. The compiler has to assume the worst-case scenario 
+                // where send might be called.
+                let _ = success_tx.send(());
             });
             // Sets the onload event handler for the image
             image.set_onload(Some(callback.as_ref()
                 // unchecked_ref is used to convert the call back to the 
                 // correct type expected by 'set_onload'
                 .unchecked_ref()));
-            // Because Javascript now owns the closure : 
-            // - we MUST prevent Rust from cleaning up the closure when it 
-            // goes out of scope
-            // - 'forget()' accomplishes this
-            // FIXME: address the fact that this memory is NEVER reclaimed
-            callback.forget();
+
             // start loading the image by setting the source to our file name
             image.set_src("Idle (1).png");
-            // attempt to draw image at co-ordinate input
-            
             // wait for image to load - (invisible progress bar)
             // - pauses execution until signal is received in one-shot channel
             // - walkie talkie are cleared because it was one-shot
-            let _ = rx.await;
+            // - forget() call no longer necessary
+            let _ = success_rx.await;
 
             // now draw image after waiting for it to load ^
             context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0)
