@@ -2,6 +2,8 @@
 use getrandom::getrandom;  // js shim because access to system entropy needed
 use once_cell::sync::Lazy; // no js shim needed because it's pure Rust impl
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::rc::Rc;
+use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 // ELI5: Javascript properties are public and web_sys :
@@ -16,7 +18,8 @@ use web_sys::{
     window, 
     CanvasRenderingContext2d, 
     HtmlCanvasElement, 
-    HtmlImageElement
+    HtmlImageElement,
+    Event,
 };
 
 // ==================== Constants ====================
@@ -169,45 +172,60 @@ pub fn main_js() -> Result<(), JsValue> {
             //  You'll use this to send the message.
             //  - rx (receiver): This is your friend's part. They'll use this 
             //  to listen for your message.
-            //  The <()> part means that the message you're sending is very 
-            //  simple, just a signal that means "I'm done!"
             // - You can only use this walkie-talkie set once. After you send 
             // a message, it stops working.
-            let (success_tx, success_rx) = futures::channel::oneshot::channel::<()>();
-
-            // Creates a closure that will be called once the image is loaded
-            // - in this case, it logs a message indicating load completed
-            // - because a one-shot channel is moved into a closure, this 
-            // entire closure immediately becomes a FnOnce ... see NOTE inside
-            // - though Closure::once() explicitly specifies a FnOnce closure
-            let callback = Closure::once(move || {
-                console::log_1(&JsValue::from_str("[image] done loading"));
-                // send signals to one-shot channel that task completed
-                // - walkie talkie listeners will get this message
-                // NOTE: closure is FnOnce ONLY if one-shot channel calls send()
-                // What if send is called conditionally? 
-                // - The mere possibility of calling it makes the closure 
-                // FnOnce. The compiler has to assume the worst-case scenario 
-                // where send might be called.
-                let _ = success_tx.send(());
+            let (success_tx, success_rx) = futures::channel::oneshot::channel::<Result<(), JsValue>>();
+            let success_tx = Rc::new(RefCell::new(Some(success_tx)));
+            let success_tx_clone = success_tx.clone();
+            
+            // Callback closures that will be called once the load attempt done
+            // - Closure::once() EXPLICITLY specifies a FnOnce closure, but tx 
+            // send() call would have IMPLICITLY specified a FnOnce closure
+            // at compile time
+            let callback_success = Closure::once(move || {
+                if let Some(tx) = success_tx.borrow_mut().take(){
+                    let _ = tx.send(Ok(()));
+                }
             });
-            // Sets the onload event handler for the image
-            image.set_onload(Some(callback.as_ref()
+
+            let callback_error = Closure::once(move |err: Event| {
+                if let Some(tx) = success_tx_clone.borrow_mut().take() {
+                    let _ = tx.send(Err(err.into()));
+                }
+            });
+
+            // Sets the callbacks
+            image.set_onload(Some(callback_success.as_ref()
                 // unchecked_ref is used to convert the call back to the 
                 // correct type expected by 'set_onload'
                 .unchecked_ref()));
+            image.set_onerror(Some(callback_error.as_ref().unchecked_ref()));
 
             // start loading the image by setting the source to our file name
-            image.set_src("Idle (1).png");
-            // wait for image to load - (invisible progress bar)
+            // image.set_src("Idle (1).png");
+            image.set_src("Rhb.png");
+            // wait for image to load or fail - (invisible progress bar)
             // - pauses execution until signal is received in one-shot channel
             // - walkie talkie are cleared because it was one-shot
             // - forget() call no longer necessary
-            let _ = success_rx.await;
+            match success_rx.await {
+                Ok(Ok(()))=> {
+                    // Image loaded successfully
+                    console::log_1(&JsValue::from_str("[image] loading : DONE"));
+                    // Drawing operations here
+                    context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0)
+                        .expect("Failed to draw image");
+                },
+                Ok(Err(err))=>{
+                    // Image failed to load
+                    console::log_1(&JsValue::from_str(&format!("[image] loading : ERROR {:?}", err)));
+                },
+                Err(_)=>{
+                    // Channel closed without sending a value
+                    console::log_1(&JsValue::from_str("[image] loading : NO VALUE SENT"));
+                }
+            };
 
-            // now draw image after waiting for it to load ^
-            context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0)
-                .expect("Failed to draw image");
         }
     );
 
