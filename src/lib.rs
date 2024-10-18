@@ -38,6 +38,7 @@ static DEPTH: AtomicUsize = AtomicUsize::new(5);
 // add a note to manually apply filter on file open (init)
 // - updated workaround, using once_cell instead of init
 const LENGTH_DEFAULT: f64 = 600.0;
+// TODO: Explain why we are using AtomicU64 ?
 static LENGTH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(LENGTH_DEFAULT.to_bits()));
 
 // ==================== Types ====================
@@ -93,7 +94,18 @@ struct Rect {
     height: f64,
 }
 
+
 impl Rect {
+    // In code new() and center() are CHILDREN of the Rect impl block :
+    // Rect
+    // ├─ x
+    // ├─ y
+    // ├─ width
+    // ├─ height
+    // ├─ new()
+    // └─ center()
+    // NOTE: The document Symbols table will VISUALLY list them as SIBLINGS
+    // for navigating convenience
     fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
         Self {
             x,
@@ -139,13 +151,6 @@ pub fn main_js() -> Result<(), JsValue> {
     let base_triangle: TrianglePoints = compute_triangle_points(triangle::get_length());
     // center the triangle
     let centered_triangle = center_triangle(base_triangle, canvas_rect);
-    console::log_1(&format!("[main_js] {:?}", base_triangle).into());
-    sierpinski(
-        &context,
-        centered_triangle,
-        random_color(),
-        triangle::get_depth(),
-    )?;
 
     // Load and Draw sprite
     // clone to move a context reference into the async block
@@ -174,10 +179,13 @@ pub fn main_js() -> Result<(), JsValue> {
             //  to listen for your message.
             // - You can only use this walkie-talkie set once. After you send 
             // a message, it stops working.
-            let (success_tx, success_rx) = futures::channel::oneshot::channel::<Result<(), JsValue>>();
-            let success_tx = Rc::new(RefCell::new(Some(success_tx)));
-            let success_tx_clone = success_tx.clone();
-            
+            let (tx, rx) = futures::channel::oneshot::channel::<Result<(), JsValue>>();
+            // NOTE: RefCell vs Mutex because we are ASSUMING single thread
+            // - if not we can't use Rc anyways because that's NOT threadsafe
+            let success_tx = Rc::new(RefCell::new(Some(tx)));
+            // clone so we can move into the error callback closure
+            let error_tx = success_tx.clone();
+
             // Callback closures that will be called once the load attempt done
             // - Closure::once() EXPLICITLY specifies a FnOnce closure, but tx 
             // send() call would have IMPLICITLY specified a FnOnce closure
@@ -189,7 +197,7 @@ pub fn main_js() -> Result<(), JsValue> {
             });
 
             let callback_error = Closure::once(move |err: Event| {
-                if let Some(tx) = success_tx_clone.borrow_mut().take() {
+                if let Some(tx) = error_tx.borrow_mut().take() {
                     let _ = tx.send(Err(err.into()));
                 }
             });
@@ -208,7 +216,7 @@ pub fn main_js() -> Result<(), JsValue> {
             // - pauses execution until signal is received in one-shot channel
             // - walkie talkie are cleared because it was one-shot
             // - forget() call no longer necessary
-            match success_rx.await {
+            match rx.await {
                 Ok(Ok(()))=> {
                     // Image loaded successfully
                     console::log_1(&JsValue::from_str("[image] loading : DONE"));
@@ -228,6 +236,18 @@ pub fn main_js() -> Result<(), JsValue> {
 
         }
     );
+
+    // even if image doesn't load, program will still continue to draw triangle
+    // as opposed to hanging on await because 
+    // - we've added error handling
+    // - so it can exit the await loop
+    console::log_1(&format!("[main_js] {:?}", base_triangle).into());
+    sierpinski(
+        &context,
+        centered_triangle,
+        random_color(),
+        triangle::get_depth(),
+    )?;
 
     Ok(())
 }
@@ -345,6 +365,7 @@ fn midpoint(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
 }
 
+// TODO: Can be optimized by pre-calculating some values?
 fn center_triangle(points: TrianglePoints, canvas: Rect) -> TrianglePoints {
     let [top, left, right] = points;
 
