@@ -1,11 +1,15 @@
 // ==================== Imports ====================
-use getrandom::getrandom;  // js shim because access to system entropy needed
-use once_cell::sync::Lazy; // no js shim needed because it's pure Rust impl
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::collections::HashMap;
+use serde::Deserialize;
+use getrandom::getrandom;  // js shim because access to system entropy needed
+use once_cell::sync::Lazy; // no js shim needed because it's pure Rust impl
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use serde_wasm_bindgen::from_value;
+
 // ELI5: Javascript properties are public and web_sys :
 // - a) just generates setter and getter functions
 // - b) these functions take JsValue objects that represent objects owned by
@@ -86,14 +90,24 @@ mod triangle {
 }
 
 // ==================== Structs ====================
-#[derive(Debug, Clone, Copy)]
+
+#[derive(Deserialize)]
+struct Cell {
+    frame: Rect,
+}
+
+#[derive(Deserialize)]
+struct Sheet {
+    frames: HashMap<String, Cell>,
+}
+
+#[derive(Deserialize, Debug, Clone, Copy)]
 struct Rect {
     x: f64,
     y: f64,
-    width: f64,
-    height: f64,
+    w: f64,
+    h: f64,
 }
-
 
 impl Rect {
     // In code new() and center() are CHILDREN of the Rect impl block :
@@ -106,16 +120,16 @@ impl Rect {
     // └─ center()
     // NOTE: The document Symbols table will VISUALLY list them as SIBLINGS
     // for navigating convenience
-    fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
+    fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
         Self {
             x,
             y,
-            width,
-            height,
+            w,
+            h,
         }
     }
     fn center(&self) -> (f64, f64) {
-        (self.x + self.width * 0.5, self.y + self.height * 0.5)
+        (self.x + self.w * 0.5, self.y + self.h* 0.5)
     }
 }
 
@@ -210,8 +224,7 @@ pub fn main_js() -> Result<(), JsValue> {
             image.set_onerror(Some(callback_error.as_ref().unchecked_ref()));
 
             // start loading the image by setting the source to our file name
-            // image.set_src("Idle (1).png");
-            image.set_src("Rhb.png");
+            image.set_src("Idle (1).png");
             // wait for image to load or fail - (invisible progress bar)
             // - pauses execution until signal is received in one-shot channel
             // - walkie talkie are cleared because it was one-shot
@@ -234,22 +247,94 @@ pub fn main_js() -> Result<(), JsValue> {
                 }
             };
 
+            context_clone.draw_image_with_html_image_element(&image, 0.0, 0.0);
+            let json = fetch_json("rhb.json")
+                .await
+                .expect("Could not fetch rhb.json");
+
+            let sheet: Sheet = from_value(json)
+                .expect("Could not convert rhb.json into a Sheet structure");
+
+            let (tx, rx) = futures::channel::oneshot::channel::<Result<(), JsValue>>();
+            let success_tx = Rc::new(RefCell::new(Some(tx)));
+            let error_tx = success_tx.clone();
+
+            let callback_success = Closure::once(move || {
+                if let Some(tx) = success_tx.borrow_mut().take(){
+                    let _ = tx.send(Ok(()));
+                }
+            });
+
+            let callback_error = Closure::once(move |err: Event| {
+                if let Some(tx) = error_tx.borrow_mut().take() {
+                    let _ = tx.send(Err(err.into()));
+                }
+            });
+
+            // Sets the callbacks
+            image.set_onload(Some(callback_success.as_ref()
+                // unchecked_ref is used to convert the call back to the 
+                // correct type expected by 'set_onload'
+                .unchecked_ref()));
+            image.set_onerror(Some(callback_error.as_ref().unchecked_ref()));
+
+            // start loading the image by setting the source to our file name
+            image.set_src("rhb.png");
+            match rx.await {
+                Ok(Ok(()))=> {
+                    console::log_1(&JsValue::from_str("[json] loading : DONE"));
+                    let sprite = sheet.frames.get("Slide (1).png").expect("Cell not found");
+                    // Drawing operations here
+                    context_clone.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                        &image,
+                        sprite.frame.x,
+                        sprite.frame.y,
+                        sprite.frame.w,
+                        sprite.frame.h,
+                        300.0,
+                        300.0,
+                        sprite.frame.w,
+                        sprite.frame.h,
+
+                    ).expect("Failed to draw image");
+                },
+                Ok(Err(err))=>{
+                    console::log_1(&JsValue::from_str(&format!("[json] loading : ERROR {:?}", err)));
+                },
+                Err(_)=>{
+                    console::log_1(&JsValue::from_str("[json] loading : NO VALUE SENT"));
+                }
+            };
+
+
         }
     );
 
-    // even if image doesn't load, program will still continue to draw triangle
-    // as opposed to hanging on await because 
-    // - we've added error handling
-    // - so it can exit the await loop
-    console::log_1(&format!("[main_js] {:?}", base_triangle).into());
-    sierpinski(
-        &context,
-        centered_triangle,
-        random_color(),
-        triangle::get_depth(),
-    )?;
+    // Even if an error occurs in the image loading or processing:
+    // - The async task will complete (either successfully or with an error)
+    // - The main thread continues execution, drawing the triangle
+    // Error handling within the async block is still important for logging and 
+    // potential recovery
+    // OOOF: Ah the book example adds draw triangle in the async block : sloppy
+    // console::log_1(&format!("[main_js] {:?}", base_triangle).into());
+    // sierpinski(
+    //     &context,
+    //     centered_triangle,
+    //     random_color(),
+    //     triangle::get_depth(),
+    // )?;
 
     Ok(())
+}
+
+async fn fetch_json(json_path:&str) -> Result<JsValue, JsValue>{
+    let window = window().unwrap();
+    let resp_value = wasm_bindgen_futures::JsFuture::from(
+        window.fetch_with_str(json_path)
+    ).await?;
+
+    let resp: web_sys::Response = resp_value.dyn_into()?;
+    wasm_bindgen_futures::JsFuture::from(resp.json()?).await
 }
 
 // ==================== WASM-bindgen Functions ====================
