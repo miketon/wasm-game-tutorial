@@ -159,20 +159,50 @@ pub fn main_js() -> Result<(), JsValue> {
             image.set_src("rhb.png");
             match rx.await {
                 Ok(Ok(())) => {
+                    let mut frame = -1;
                     console::log_1(&JsValue::from_str("[json] loading : DONE"));
-                    let sprite = sheet.frames.get("Slide (1).png").expect("Cell not found");
-                    // Drawing operations here
-                    context.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-                        &image,
-                        sprite.frame.x,
-                        sprite.frame.y,
-                        sprite.frame.w,
-                        sprite.frame.h,
-                        300.0,
-                        300.0,
-                        sprite.frame.w,
-                        sprite.frame.h,
-                    ).expect("Failed to draw image");
+                    #[rustfmt::skip]
+                    let interval_callback = Closure::wrap(
+                        Box::new(move || {
+                            // increments frame coounter and wraps 0-7
+                            frame = (frame+1) % 8;
+                            // OOOF: rhb.json - run frames start at 1-8
+                            // - RuntimeError: unreachable : if outside range
+                            // - so we MUST +1 to frame counter
+                            let frame_name = format!("Run ({}).png", frame +1);
+                            // clears the existing context
+                            context.clear_rect(0.0, 0.0, 600.0, 600.0);
+                            // get sprite data for the current frame
+                            let sprite = sheet.frames.get(&frame_name).expect("Cell not found");
+                            // draw the current frame to the cleared context
+                            context.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                                &image,
+                                sprite.frame.x,
+                                sprite.frame.y,
+                                sprite.frame.w,
+                                sprite.frame.h,
+                                300.0,
+                                300.0,
+                                sprite.frame.w,
+                                sprite.frame.h,
+                            ).expect("Failed to draw image");
+                        }) as Box<dyn FnMut()>
+                    );
+
+                    // Sets up interval that calls the animation closure
+                    // every 50ms
+                    let _ = window.set_interval_with_callback_and_timeout_and_arguments_0(
+                        interval_callback.as_ref().unchecked_ref(),
+                        50,
+                    );
+
+                    // Prevents the closure from being dropped when it goes
+                    // out of scope
+                    // - effectively dropped from Rust borrow checking, and
+                    // hands off ownership of closure to Javascript runtime
+                    // - HACK: runtime memory error NOT caught by Rust's static
+                    // analysis
+                    interval_callback.forget();
                 }
                 Ok(Err(err)) => {
                     console::log_1(&JsValue::from_str(&format!(
