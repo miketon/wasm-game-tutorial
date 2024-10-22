@@ -7,6 +7,9 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
+#[macro_use]
+mod browser;
+
 // OOOF: include and activate sierpinksi triangle
 // ELI5: Javascript properties are public and web_sys :
 // - a) just generates setter and getter functions
@@ -17,19 +20,9 @@ use wasm_bindgen::JsCast;
 #[rustfmt::skip]
 use web_sys::{
     console, 
-    window, 
-    CanvasRenderingContext2d, 
-    HtmlCanvasElement, 
     HtmlImageElement,
     Event,
 };
-
-// ==================== Constants ====================
-// Constants related to HTML elements
-mod html {
-    pub const CANVAS_ID: &str = "canvas";
-    pub const CONTEXT_2D: &str = "2d";
-}
 
 // ==================== Structs ====================
 #[derive(Deserialize)]
@@ -80,20 +73,7 @@ pub fn main_js() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
 
     // get context
-    let window = window().expect("Failed to get window");
-    let document = window.document().expect("document on window required");
-    let canvas = document
-        .get_element_by_id(html::CANVAS_ID)
-        .expect("canvas element required")
-        .dyn_into::<HtmlCanvasElement>()
-        .expect("HtmlCanvasElement required");
-    let context = canvas
-        .get_context(html::CONTEXT_2D)
-        // NOTE: Explian why we are unwrapping twice here?
-        .expect("2d context required")
-        .expect("context should exist")
-        .dyn_into::<CanvasRenderingContext2d>()
-        .expect("context should be a CanvasRenderingContext2d");
+    let context = browser::context().expect("context should be a CanvasRenderingContext2d");
 
     // spawns a new asynchronous task in local thread, for web assembly
     // environment, using wasm_bindgen_futures
@@ -191,10 +171,12 @@ pub fn main_js() -> Result<(), JsValue> {
 
                     // Sets up interval that calls the animation closure
                     // every 50ms
-                    let _ = window.set_interval_with_callback_and_timeout_and_arguments_0(
-                        interval_callback.as_ref().unchecked_ref(),
-                        50,
-                    );
+                    let _ = browser::window()
+                        .unwrap()
+                        .set_interval_with_callback_and_timeout_and_arguments_0(
+                            interval_callback.as_ref().unchecked_ref(),
+                            50,
+                        );
 
                     // Prevents the closure from being dropped when it goes
                     // out of scope
@@ -220,7 +202,7 @@ pub fn main_js() -> Result<(), JsValue> {
 }
 
 async fn fetch_json(json_path: &str) -> Result<JsValue, JsValue> {
-    let window = window().unwrap();
+    let window = browser::window().unwrap();
     let resp_value = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(json_path)).await?;
 
     let resp: web_sys::Response = resp_value.dyn_into()?;
