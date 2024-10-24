@@ -19,7 +19,7 @@ const ELEMENT_IDS = {
 // object to store the elements
 const elements = {};
 
-const DELAY_MS = 250;
+// const DELAY_MS = 250;
 
 // #region Main
 async function run() {
@@ -55,10 +55,10 @@ async function run() {
 
     // tune compute cost of rapid value change vs responsiveness
     // - create a debounced version of updateTriangle
-    const debounceUpdateTriangle = debounce(
-      () => updateCanvas(elements),
-      DELAY_MS,
-    );
+    // const debounceUpdateTriangle = debounce(
+    //   () => updateCanvas(elements),
+    //   DELAY_MS,
+    // );
 
     // - use debounced triangle update for input events
     // elements.LENGTH.addEventListener("input", debounceUpdateTriangle, {
@@ -105,16 +105,16 @@ function clearCanvas(canvas) {
 // #endregion
 
 // #region Utils
-function debounce(func, waitFor) {
-  let timeout = null;
-
-  return function (...args) {
-    if (timeout !== null) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(() => func(...args), waitFor);
-  };
-}
+// function debounce(func, waitFor) {
+//   let timeout = null;
+//
+//   return function (...args) {
+//     if (timeout !== null) {
+//       clearTimeout(timeout);
+//     }
+//     timeout = setTimeout(() => func(...args), waitFor);
+//   };
+// }
 
 function logMessage(message, isError = false) {
   // append messages if Error
