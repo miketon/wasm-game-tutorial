@@ -1,31 +1,39 @@
 use crate::browser;
-use futures::channel::oneshot::channel;
-use std::rc::Rc;
-use std::sync::Mutex;
-#[rustfmt::skip]
-use web_sys::HtmlImageElement;
 use anyhow::{anyhow, Error, Result};
-#[rustfmt::skip]
+// ELI5: web assembly is a single threaded environment, so Rc RefCell > Mutex
+use futures::channel::oneshot::channel;
+use std::cell::RefCell;
+use std::rc::Rc;
 use wasm_bindgen::{
-    JsCast, 
-    JsValue, // NOTE: Explain how come unchecked_ref needs this?
+    // unchecked_ref (unsafe) cast from Javascript type to Rust type
+    // - because we control the closure creation and specify the expected type,
+    // in principle this should be generally safe (unsafe) code
+    JsCast,
+    JsValue,
 };
+use web_sys::HtmlImageElement;
 
+/// Asynchronously load an image from a given source path
+/// # Arguments
+/// * `source` - string slice to path/url
+/// # Returns
+/// * `Ok(HtmlImageElement)` - on load success
+/// * `Err` - on load fail
 pub async fn load_image(source: &str) -> Result<HtmlImageElement> {
-    let image = browser::new_image()?;
+    let image = browser::create_html_image_element()?;
     let (tx, rx) = channel::<Result<(), Error>>();
-    let success_tx = Rc::new(Mutex::new(Some(tx)));
+    let success_tx = Rc::new(RefCell::new(Some(tx)));
     let error_tx = success_tx.clone();
 
     let success_callback = browser::closure_once(move || {
-        if let Some(success_tx) = success_tx.lock().ok().and_then(|mut opt| opt.take()) {
-            let _ = success_tx.send(Ok(()));
+        if let Some(tx) = success_tx.borrow_mut().take() {
+            let _ = tx.send(Ok(()));
         }
     });
 
     let error_callback = browser::closure_once(move |err: JsValue| {
-        if let Some(error_tx) = error_tx.lock().ok().and_then(|mut opt| opt.take()) {
-            let _ = error_tx.send(Err(anyhow!("Error loading image : {:#?}", err)));
+        if let Some(tx) = error_tx.borrow_mut().take() {
+            let _ = tx.send(Err(anyhow!("Error loading image: {:#?}", err)));
         }
     });
 
@@ -37,7 +45,9 @@ pub async fn load_image(source: &str) -> Result<HtmlImageElement> {
     success_callback.forget();
     error_callback.forget();
 
-    // NOTE: Explain double ? unwrap
+    // ?? - double unwrap because Result<Result<(), Error>, oneshot::Canceled>
+    // - first unwrap yields channel result : Result<(), Error>
+    // - second unwrap yields image load result : () or propagating Error
     rx.await??;
 
     Ok(image)
