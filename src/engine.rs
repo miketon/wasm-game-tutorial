@@ -1,6 +1,7 @@
 use crate::browser;
 use anyhow::{anyhow, Error, Result};
 // ELI5: web assembly is a single threaded environment, so Rc RefCell > Mutex
+use async_trait::async_trait;
 use futures::channel::oneshot::channel;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,7 +14,9 @@ use wasm_bindgen::{
 };
 use web_sys::{CanvasRenderingContext2d, HtmlImageElement};
 
+#[async_trait(?Send)]
 pub trait Game {
+    async fn initialize(&self) -> Result<Box<dyn Game>>;
     fn update(&mut self);
     fn draw(&self, context: &CanvasRenderingContext2d);
 }
@@ -29,7 +32,8 @@ pub struct GameLoop {
 type SharedLoopClosure = Rc<RefCell<Option<browser::LoopClosure>>>;
 
 impl GameLoop {
-    pub async fn start(mut game: impl Game + 'static) -> Result<()> {
+    pub async fn start(game: impl Game + 'static) -> Result<()> {
+        let mut game = game.initialize().await?;
         let mut game_loop = GameLoop {
             last_frame: browser::now()?,
             accumulated_delta: 0.0,
