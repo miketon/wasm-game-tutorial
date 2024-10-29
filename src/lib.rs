@@ -9,19 +9,6 @@ mod browser;
 mod engine;
 
 // OOOF: include and activate sierpinksi triangle
-// ELI5: Javascript properties are public and web_sys :
-// - a) just generates setter and getter functions
-// - b) these functions take JsValue objects that represent objects owned by
-// Javascript
-// - c) read documentation for corresponding functions to check what types are
-// needed when translating from Rust to Javascript
-#[rustfmt::skip]
-use web_sys::{
-    console, 
-    HtmlImageElement,
-    Event,
-};
-
 // ==================== Structs ====================
 #[derive(Deserialize, Serialize)]
 struct Cell {

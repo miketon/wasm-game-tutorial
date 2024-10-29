@@ -2,7 +2,7 @@ use std::future::Future;
 
 use anyhow::{anyhow, Result};
 use serde::de::DeserializeOwned;
-use wasm_bindgen::closure::{Closure, WasmClosureFnOnce};
+use wasm_bindgen::closure::{Closure, WasmClosure, WasmClosureFnOnce};
 use wasm_bindgen::{JsCast, JsValue}; // TODO: Explain why rustanalyzer can't auto import?
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -16,6 +16,29 @@ mod html {
         pub const ID: &str = "canvas";
         pub const CONTEXT_2D: &str = "2d";
     }
+}
+
+pub type LoopClosure = Closure<dyn FnMut(f64)>;
+
+pub fn create_raf_closure(f: impl FnMut(f64) + 'static) -> LoopClosure {
+    closure_wrap(Box::new(f))
+}
+
+fn closure_wrap<T: WasmClosure + ?Sized>(data: Box<T>) -> Closure<T> {
+    Closure::wrap(data)
+}
+
+pub fn now() -> Result<f64> {
+    Ok(window()?
+        .performance()
+        .ok_or_else(|| anyhow!("Performance object not found"))?
+        .now())
+}
+
+pub fn request_animation_frame(callback: &LoopClosure) -> Result<i32> {
+    window()?
+        .request_animation_frame(callback.as_ref().unchecked_ref())
+        .map_err(|err| anyhow!("Cannnot request animation frame {:#?}", err))
 }
 
 /// Creates an HTMLImageElement
