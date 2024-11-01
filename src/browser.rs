@@ -133,8 +133,9 @@ async fn fetch_with_str(resource: &str) -> Result<JsValue> {
         .map_err(|err| anyhow!("error fetching : {:#?}", err))
 }
 
-// macro_rules! log {
-//     ($($t:tt)*) => {
-//         web_sys::console::log_1(&format!($($t)*).into());
-//     }
-// }
+#[macro_export]
+macro_rules! log {
+    ($($t:tt)*) => {
+        web_sys::console::log_1(&format!($($t)*).into());
+    }
+}
