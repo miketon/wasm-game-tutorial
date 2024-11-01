@@ -124,7 +124,10 @@ pub async fn load_image(source: &str) -> Result<HtmlImageElement> {
 
     let error_callback = browser::closure_once(move |err: JsValue| {
         if let Some(tx) = error_tx.borrow_mut().take() {
-            let _ = tx.send(Err(anyhow!("Error loading image: {:#?}", err)));
+            let _ = tx.send(Err(anyhow!(
+                "[engine.rs::load_image] Error loading image: {:#?}",
+                err
+            )));
         }
     });
 

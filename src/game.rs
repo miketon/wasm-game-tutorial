@@ -1,13 +1,17 @@
 use crate::browser;
 use crate::engine;
 use crate::engine::{Game, Rect, Renderer};
-use crate::log; // browser > lib (root) > this crate
+use crate::log;
+use anyhow::Context;
+// browser > lib (root) > this crate
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
+/// Walk The Dog : Game Trait implementation
+/// - initialize, update and draw
 pub struct WalkTheDog {
     image: Option<HtmlImageElement>,
     sheet: Option<Sheet>,
@@ -33,12 +37,12 @@ impl Game for WalkTheDog {
 
         let sheet = browser::fetch_json::<Sheet>("rhb.json")
             .await
-            .expect("Could not fetch rhb.json");
+            .context("Failed to fetch rhb.json")?;
         let image = engine::load_image("rhb.png")
             .await
-            .expect("Could not load rhb.png");
+            .context("Failed to load rhb.png")?;
 
-        log!("[initialize] WalkTheDog");
+        log!("[game.rs::WalkTheDog] initialize");
 
         Ok(Box::new(WalkTheDog {
             image: Some(image),
@@ -48,11 +52,8 @@ impl Game for WalkTheDog {
     }
 
     fn update(&mut self) {
-        if self.frame < 23 {
-            self.frame += 1;
-        } else {
-            self.frame = 0;
-        }
+        const FRAME_COUNT: u8 = 23;
+        self.frame = (self.frame + 1) % (FRAME_COUNT + 1);
     }
 
     fn draw(&self, renderer: &Renderer) {

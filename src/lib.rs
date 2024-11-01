@@ -23,7 +23,7 @@ pub fn main_js() -> Result<(), JsValue> {
         let game = WalkTheDog::new();
         GameLoop::start(game)
             .await
-            .expect("Could not start game loop");
+            .expect("[lib.rs::main_js] Could not start game loop");
     });
 
     Ok(())
