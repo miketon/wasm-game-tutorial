@@ -24,7 +24,7 @@ pub fn create_raf_closure(f: impl FnMut(f64) + 'static) -> LoopClosure {
     closure_wrap(Box::new(f))
 }
 
-fn closure_wrap<T: WasmClosure + ?Sized>(data: Box<T>) -> Closure<T> {
+pub fn closure_wrap<T: WasmClosure + ?Sized>(data: Box<T>) -> Closure<T> {
     Closure::wrap(data)
 }
 
@@ -68,7 +68,7 @@ pub fn context() -> Result<CanvasRenderingContext2d> {
         })
 }
 
-fn canvas() -> Result<HtmlCanvasElement> {
+pub fn canvas() -> Result<HtmlCanvasElement> {
     document()?
         .get_element_by_id(html::canvas::ID)
         .ok_or_else(|| {

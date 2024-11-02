@@ -1,5 +1,5 @@
 use crate::browser;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 // ELI5: web assembly is a single threaded environment, so Rc RefCell > Mutex
 use async_trait::async_trait;
 use futures::channel::oneshot::channel;
@@ -12,7 +12,7 @@ use wasm_bindgen::{
     JsCast,
     JsValue,
 };
-use web_sys::{CanvasRenderingContext2d, HtmlImageElement};
+use web_sys::{CanvasRenderingContext2d, HtmlImageElement, KeyboardEvent};
 
 #[async_trait(?Send)]
 pub trait Game {
@@ -34,6 +34,7 @@ type SharedLoopClosure = Rc<RefCell<Option<browser::LoopClosure>>>;
 impl GameLoop {
     pub async fn start(game: impl Game + 'static) -> Result<()> {
         let mut game = game.initialize().await?;
+        let _ = prepare_input();
         let mut game_loop = GameLoop {
             last_frame: browser::now()?,
             accumulated_delta: 0.0,
@@ -145,4 +146,23 @@ pub async fn load_image(source: &str) -> Result<HtmlImageElement> {
     rx.await??;
 
     Ok(image)
+}
+
+fn prepare_input() -> Result<()> {
+    let canvas = browser::canvas().context("Canvas element not found")?;
+
+    let onkeydown = browser::closure_wrap(Box::new(move |event: KeyboardEvent| {
+        log!("Key pressed: {}", event.key());
+    }) as Box<dyn FnMut(KeyboardEvent)>);
+    let onkeyup = browser::closure_wrap(Box::new(move |event: KeyboardEvent| {
+        log!("Key released: {}", event.key());
+    }) as Box<dyn FnMut(KeyboardEvent)>);
+
+    canvas.set_onkeydown(Some(onkeydown.as_ref().unchecked_ref()));
+    canvas.set_onkeyup(Some(onkeyup.as_ref().unchecked_ref()));
+
+    onkeydown.forget();
+    onkeyup.forget();
+
+    Ok(())
 }
