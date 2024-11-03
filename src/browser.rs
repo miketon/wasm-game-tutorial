@@ -81,7 +81,7 @@ pub fn canvas() -> Result<HtmlCanvasElement> {
         .map_err(|element| anyhow!("Error converting {:#?} to HtmlCanvasElement", element))
 }
 
-fn window() -> Result<Window> {
+pub fn window() -> Result<Window> {
     web_sys::window().ok_or_else(|| anyhow!("Window not found"))
 }
 

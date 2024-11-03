@@ -1,5 +1,6 @@
 use crate::browser;
 use crate::engine;
+use crate::engine::KeyState;
 use crate::engine::{Game, Rect, Renderer};
 use crate::log;
 use anyhow::Context;
@@ -51,9 +52,12 @@ impl Game for WalkTheDog {
         }))
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, keystate: &KeyState) {
         const FRAME_COUNT: u8 = 23;
         self.frame = (self.frame + 1) % (FRAME_COUNT + 1);
+        if keystate.is_pressed("ArrowRight") {
+            log!("Moving right on : {:?}", keystate);
+        }
     }
 
     fn draw(&self, renderer: &Renderer) {
