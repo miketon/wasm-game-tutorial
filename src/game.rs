@@ -1,7 +1,7 @@
 use crate::browser;
 use crate::engine;
 use crate::engine::KeyState;
-use crate::engine::{Game, Rect, Renderer};
+use crate::engine::{Game, Point, Rect, Renderer};
 use crate::log;
 use anyhow::Context;
 // browser > lib (root) > this crate
@@ -11,12 +11,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
+const ANIMATION_FRAME_DURATION: u8 = 3;
+const TOTAL_ANIMATION_FRAMES: u8 = 23;
+const MOVEMENT_SPEED: i16 = 3;
+const CANVAS_WIDTH: f32 = 600.0;
+const CANVAS_HEIGHT: f32 = 600.0;
+
 /// Walk The Dog : Game Trait implementation
 /// - initialize, update and draw
 pub struct WalkTheDog {
     image: Option<HtmlImageElement>,
     sheet: Option<Sheet>,
     frame: u8,
+    position: Point,
 }
 
 impl WalkTheDog {
@@ -25,6 +32,7 @@ impl WalkTheDog {
             image: None,
             sheet: None,
             frame: 0,
+            position: Point { x: 0, y: 0 },
         }
     }
 }
@@ -49,46 +57,67 @@ impl Game for WalkTheDog {
             image: Some(image),
             sheet: Some(sheet),
             frame: self.frame,
+            position: self.position,
         }))
     }
 
     fn update(&mut self, keystate: &KeyState) {
-        const FRAME_COUNT: u8 = 23;
-        self.frame = (self.frame + 1) % (FRAME_COUNT + 1);
-        if keystate.is_pressed("ArrowRight") {
-            log!("Moving right on : {:?}", keystate);
+        self.frame = (self.frame + 1) % (TOTAL_ANIMATION_FRAMES + 1);
+
+        let mut velocity = Point { x: 0, y: 0 };
+        if keystate.is_pressed("ArrowDown") {
+            velocity.y += MOVEMENT_SPEED;
         }
+        if keystate.is_pressed("ArrowUp") {
+            velocity.y -= MOVEMENT_SPEED;
+        }
+        if keystate.is_pressed("ArrowRight") {
+            velocity.x += MOVEMENT_SPEED;
+        }
+        if keystate.is_pressed("ArrowLeft") {
+            velocity.x -= MOVEMENT_SPEED;
+        }
+
+        self.position.x += velocity.x;
+        self.position.y += velocity.y;
     }
 
     fn draw(&self, renderer: &Renderer) {
-        let current_sprite = (self.frame / 3) + 1;
+        let current_sprite = (self.frame / ANIMATION_FRAME_DURATION) + 1;
         let frame_name = format!("Run ({}).png", current_sprite);
-        let sprite = self
+        let sprite = match self
             .sheet // start with self.sheet (Option<Sheet>)
             .as_ref() // Convert Option<Sheet> to Option<&Sheet>
             // if sheet exists, try to get frame
             .and_then(|sheet| sheet.frames.get(&frame_name))
-            // panic if cell for frame not found
-            .unwrap_or_else(|| panic!("Cell not found : [{}]", frame_name.as_str()));
+        {
+            Some(sprite) => sprite,
+            None => {
+                log!("Warning : Sprite not found: {}", frame_name);
+                return;
+            }
+        };
         renderer.clear(&Rect {
             x: 0.0,
             y: 0.0,
-            width: 600.0,
-            height: 600.0,
+            width: CANVAS_WIDTH,
+            height: CANVAS_HEIGHT,
         });
 
         if let Some(image) = self.image.as_ref() {
             renderer.draw_image(
                 image,
+                // sets frame from sprite to draw
                 &Rect {
                     x: sprite.frame.x.into(),
                     y: sprite.frame.y.into(),
                     width: sprite.frame.w.into(),
                     height: sprite.frame.h.into(),
                 },
+                // sets frame where to draw on canvax
                 &Rect {
-                    x: 300.0,
-                    y: 300.0,
+                    x: self.position.x.into(),
+                    y: self.position.y.into(),
                     width: sprite.frame.w.into(),
                     height: sprite.frame.h.into(),
                 },

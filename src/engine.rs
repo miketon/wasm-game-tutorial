@@ -63,6 +63,7 @@ pub trait Game {
     fn draw(&self, context: &Renderer);
 }
 
+#[derive(Debug)]
 pub struct GameLoop {
     last_frame: f64,
     accumulated_delta: f32,
@@ -111,6 +112,7 @@ impl GameLoop {
     }
 }
 
+#[derive(Debug)]
 pub struct Renderer {
     context: CanvasRenderingContext2d,
 }
@@ -125,6 +127,10 @@ impl Renderer {
         );
     }
 
+    /// draw_image() method :
+    /// - image: image to draw
+    /// - frame: rect of the current frame from src sheet to draw
+    /// - destination : rect of where on canvas to draw image
     pub fn draw_image(&self, image: &HtmlImageElement, frame: &Rect, destination: &Rect) {
         self.context
             .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
@@ -142,11 +148,18 @@ impl Renderer {
     }
 }
 
+#[derive(Debug)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
     pub width: f32,
     pub height: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Point {
+    pub x: i16,
+    pub y: i16,
 }
 
 /// Asynchronously load an image from a given source path
