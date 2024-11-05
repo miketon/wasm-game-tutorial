@@ -5,6 +5,7 @@ use crate::engine::{Game, Point, Rect, Renderer};
 use crate::log;
 use anyhow::Context;
 // browser > lib (root) > this crate
+use self::red_hat_boy_states::*;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -143,3 +144,78 @@ struct SheetRect {
     w: i16,
     h: i16,
 }
+
+// #region StateMachines
+
+/// All code relating to individual states are behind this mod block and will
+/// enforce unrepresentable states, by making it impossible to reach a state
+/// transition without using ONLY the methods provided :
+/// - PUBLIC  : RedHatBoyState and RedHatBoyContext struct are public
+/// - PRIVATE : internal members are private
+mod red_hat_boy_states {
+    use crate::engine::Point;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Idle;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Running;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct RedHatBoyState<S> {
+        context: RedHatBoyContext,
+        // TODO: this is never read ... explain why?
+        _state: S,
+    }
+
+    impl RedHatBoyState<Idle> {
+        // TODO: Explain how this taking mut self consumes the current state?
+        pub fn run(self) -> RedHatBoyState<Running> {
+            RedHatBoyState {
+                context: self.context,
+                _state: Running {},
+            }
+        }
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    /// Context data COMMON to all RedHatBoyState(s)
+    pub struct RedHatBoyContext {
+        frame: u8,
+        position: Point,
+        velocity: Point,
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum RedHatBoyStateMachine {
+    Idle(RedHatBoyState<Idle>),
+    Running(RedHatBoyState<Running>),
+}
+
+impl From<RedHatBoyState<Running>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<Running>) -> Self {
+        RedHatBoyStateMachine::Running(state)
+    }
+}
+
+pub enum Event {
+    Run,
+}
+
+impl RedHatBoyStateMachine {
+    fn transition(self, event: Event) -> Self {
+        match (self, event) {
+            (RedHatBoyStateMachine::Idle(state), Event::Run) => state.run().into(),
+            _ => self,
+        }
+    }
+}
+
+struct RedHatBoy {
+    statemachine: RedHatBoyStateMachine,
+    sprite_sheet: Sheet,
+    image: HtmlImageElement,
+}
+
+// #endregion
