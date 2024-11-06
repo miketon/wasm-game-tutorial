@@ -3,10 +3,9 @@ use crate::engine;
 use crate::engine::KeyState;
 use crate::engine::{Game, Point, Rect, Renderer};
 use crate::log;
-use anyhow::Context;
 // browser > lib (root) > this crate
 use self::red_hat_boy_states::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -25,6 +24,7 @@ pub struct WalkTheDog {
     sheet: Option<Sheet>,
     frame: u8,
     position: Point,
+    rhb: Option<RedHatBoy>,
 }
 
 impl WalkTheDog {
@@ -34,6 +34,7 @@ impl WalkTheDog {
             sheet: None,
             frame: 0,
             position: Point { x: 0, y: 0 },
+            rhb: None,
         }
     }
 }
@@ -45,20 +46,20 @@ impl Game for WalkTheDog {
         // - replacing it with WalkTheDog
         // - thrown on the heap?
 
-        let sheet = browser::fetch_json::<Sheet>("rhb.json")
-            .await
-            .context("Failed to fetch rhb.json")?;
-        let image = engine::load_image("rhb.png")
-            .await
-            .context("Failed to load rhb.png")?;
+        let sheet = Some(browser::fetch_json::<Sheet>("rhb.json").await?);
+        let image = Some(engine::load_image("rhb.png").await?);
 
         log!("[game.rs::WalkTheDog] initialize");
 
         Ok(Box::new(WalkTheDog {
-            image: Some(image),
-            sheet: Some(sheet),
+            image: image.clone(),
+            sheet: sheet.clone(),
             frame: self.frame,
             position: self.position,
+            rhb: Some(RedHatBoy::new(
+                sheet.clone().ok_or_else(|| anyhow!("No Sheet Present"))?,
+                image.clone().ok_or_else(|| anyhow!("No Image Present"))?,
+            )),
         }))
     }
 
@@ -124,20 +125,22 @@ impl Game for WalkTheDog {
                 },
             );
         };
+
+        self.rhb.as_ref().unwrap().draw(renderer);
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct Sheet {
     frames: HashMap<String, Cell>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct Cell {
     frame: SheetRect,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct SheetRect {
     x: i16,
     y: i16,
@@ -155,6 +158,10 @@ struct SheetRect {
 mod red_hat_boy_states {
     use crate::engine::Point;
 
+    const FLOOR: i16 = 475;
+    const IDLE_FRAMES: &str = "Idle";
+    const RUN_FRAMES: &str = "Run";
+
     #[derive(Debug, Copy, Clone)]
     pub struct Idle;
 
@@ -168,7 +175,25 @@ mod red_hat_boy_states {
         _state: S,
     }
 
+    /// generic methods shared between all states
+    /// - context() -> RedHatBoyContext
+    impl<S> RedHatBoyState<S> {
+        pub fn context(&self) -> &RedHatBoyContext {
+            &self.context
+        }
+    }
+
     impl RedHatBoyState<Idle> {
+        pub fn new() -> Self {
+            RedHatBoyState {
+                context: RedHatBoyContext {
+                    frame: 0,
+                    position: Point { x: 0, y: FLOOR },
+                    velocity: Point { x: 0, y: 0 },
+                },
+                _state: Idle {},
+            }
+        }
         // TODO: Explain how this taking mut self consumes the current state?
         pub fn run(self) -> RedHatBoyState<Running> {
             RedHatBoyState {
@@ -176,14 +201,24 @@ mod red_hat_boy_states {
                 _state: Running {},
             }
         }
+
+        pub fn frame_name(&self) -> &str {
+            IDLE_FRAMES
+        }
+    }
+
+    impl RedHatBoyState<Running> {
+        pub fn frame_name(&self) -> &str {
+            RUN_FRAMES
+        }
     }
 
     #[derive(Debug, Copy, Clone)]
     /// Context data COMMON to all RedHatBoyState(s)
     pub struct RedHatBoyContext {
-        frame: u8,
-        position: Point,
-        velocity: Point,
+        pub frame: u8,
+        pub position: Point,
+        pub velocity: Point,
     }
 }
 
@@ -210,12 +245,67 @@ impl RedHatBoyStateMachine {
             _ => self,
         }
     }
+
+    fn frame_name(&self) -> &str {
+        match self {
+            RedHatBoyStateMachine::Idle(state) => state.frame_name(),
+            RedHatBoyStateMachine::Running(state) => state.frame_name(),
+        }
+    }
+
+    // TODO: Find out if this can be simplified with a macro?
+    fn context(&self) -> &RedHatBoyContext {
+        match self {
+            RedHatBoyStateMachine::Idle(state) => state.context(),
+            RedHatBoyStateMachine::Running(state) => state.context(),
+        }
+    }
 }
 
 struct RedHatBoy {
-    statemachine: RedHatBoyStateMachine,
+    state_machine: RedHatBoyStateMachine,
     sprite_sheet: Sheet,
     image: HtmlImageElement,
+}
+
+impl RedHatBoy {
+    fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
+        RedHatBoy {
+            state_machine: RedHatBoyStateMachine::Idle(RedHatBoyState::new()),
+            sprite_sheet: sheet,
+            image,
+        }
+    }
+
+    fn draw(&self, renderer: &Renderer) {
+        let frame_name = format!(
+            "{} ({}).png",
+            self.state_machine.frame_name(),
+            (self.state_machine.context().frame / 3) + 1
+        );
+        let sprite = self
+            .sprite_sheet
+            .frames
+            .get(&frame_name)
+            .expect("Cell not found");
+
+        renderer.draw_image(
+            &self.image,
+            &Rect {
+                x: sprite.frame.x.into(),
+                y: sprite.frame.y.into(),
+                width: sprite.frame.w.into(),
+                height: sprite.frame.h.into(),
+            },
+            &Rect {
+                // TODO: Explain why it's ok to diverge from Law of Demeter here
+                x: self.state_machine.context().position.x.into(),
+                y: self.state_machine.context().position.y.into(),
+                width: sprite.frame.w.into(),
+                height: sprite.frame.h.into(),
+            },
+        );
+    }
 }
 
 // #endregion
