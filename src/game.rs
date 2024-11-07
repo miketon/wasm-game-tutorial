@@ -4,6 +4,7 @@ use crate::engine::KeyState;
 use crate::engine::{Game, Point, Rect, Renderer};
 use crate::log;
 // browser > lib (root) > this crate
+use self::constants::{animation, canvas, MOVEMENT_SPEED};
 use self::red_hat_boy_states::*;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -11,11 +12,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
-const ANIMATION_FRAME_DURATION: u8 = 3;
-const TOTAL_ANIMATION_FRAMES: u8 = 23;
-const MOVEMENT_SPEED: i16 = 3;
-const CANVAS_WIDTH: f32 = 600.0;
-const CANVAS_HEIGHT: f32 = 600.0;
+mod constants {
+
+    pub mod animation {
+        pub const FRAME_DURATION: u8 = 3;
+        pub const TOTAL_FRAMES: u8 = 23;
+    }
+
+    pub mod canvas {
+        pub const WIDTH: f32 = 600.0;
+        pub const HEIGHT: f32 = 600.0;
+    }
+
+    pub const MOVEMENT_SPEED: i16 = 3;
+}
 
 /// Walk The Dog : Game Trait implementation
 /// - initialize, update and draw
@@ -64,7 +74,7 @@ impl Game for WalkTheDog {
     }
 
     fn update(&mut self, keystate: &KeyState) {
-        self.frame = (self.frame + 1) % (TOTAL_ANIMATION_FRAMES + 1);
+        self.frame = (self.frame + 1) % (animation::TOTAL_FRAMES + 1);
 
         let mut velocity = Point { x: 0, y: 0 };
         if keystate.is_pressed("ArrowDown") {
@@ -85,7 +95,7 @@ impl Game for WalkTheDog {
     }
 
     fn draw(&self, renderer: &Renderer) {
-        let current_sprite = (self.frame / ANIMATION_FRAME_DURATION) + 1;
+        let current_sprite = (self.frame / animation::FRAME_DURATION) + 1;
         let frame_name = format!("Run ({}).png", current_sprite);
         let sprite = match self
             .sheet // start with self.sheet (Option<Sheet>)
@@ -102,8 +112,8 @@ impl Game for WalkTheDog {
         renderer.clear(&Rect {
             x: 0.0,
             y: 0.0,
-            width: CANVAS_WIDTH,
-            height: CANVAS_HEIGHT,
+            width: canvas::WIDTH,
+            height: canvas::HEIGHT,
         });
 
         if let Some(image) = self.image.as_ref() {
@@ -240,8 +250,9 @@ pub enum Event {
 
 impl RedHatBoyStateMachine {
     fn transition(self, event: Event) -> Self {
+        use RedHatBoyStateMachine::*;
         match (self, event) {
-            (RedHatBoyStateMachine::Idle(state), Event::Run) => state.run().into(),
+            (Idle(state), Event::Run) => state.run().into(),
             _ => self,
         }
     }
@@ -299,12 +310,20 @@ impl RedHatBoy {
             },
             &Rect {
                 // TODO: Explain why it's ok to diverge from Law of Demeter here
-                x: self.state_machine.context().position.x.into(),
-                y: self.state_machine.context().position.y.into(),
+                x: self.position().x.into(),
+                y: self.position().y.into(),
                 width: sprite.frame.w.into(),
                 height: sprite.frame.h.into(),
             },
         );
+    }
+
+    // Addresses Law of Demeter
+    // - OO style guideline where states should only access their direct
+    // nodes, NOT children of those notes
+    // - previously we manually called the full path at each entry
+    fn position(&self) -> Point {
+        self.state_machine.context().position
     }
 }
 
