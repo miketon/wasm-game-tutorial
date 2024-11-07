@@ -75,6 +75,7 @@ impl Game for WalkTheDog {
 
     fn update(&mut self, keystate: &KeyState) {
         self.frame = (self.frame + 1) % (animation::TOTAL_FRAMES + 1);
+        self.rhb.as_mut().unwrap().update();
 
         let mut velocity = Point { x: 0, y: 0 };
         if keystate.is_pressed("ArrowDown") {
@@ -180,7 +181,8 @@ mod red_hat_boy_states {
 
     #[derive(Debug, Copy, Clone)]
     pub struct RedHatBoyState<S> {
-        context: RedHatBoyContext,
+        // HACK: made context public, can cause coupling issues
+        pub context: RedHatBoyContext,
         // TODO: this is never read ... explain why?
         _state: S,
     }
@@ -249,6 +251,31 @@ pub enum Event {
 }
 
 impl RedHatBoyStateMachine {
+    fn update(self) -> Self {
+        use RedHatBoyStateMachine::*;
+        match self {
+            Idle(mut state) => {
+                // HACK: Why is this 29?  rhb.json lists idle as 10 frames
+                // - ah is it because we are playing 3 frames : 3 * 10 = 30?
+                // - setting to 30 actually crashes
+                if state.context.frame < 29 {
+                    state.context.frame += 1;
+                } else {
+                    state.context.frame = 0;
+                }
+                Idle(state)
+            }
+            Running(mut state) => {
+                if state.context.frame < 23 {
+                    state.context.frame += 1;
+                } else {
+                    state.context.frame = 0;
+                }
+                Running(state)
+            }
+        }
+    }
+
     fn transition(self, event: Event) -> Self {
         use RedHatBoyStateMachine::*;
         match (self, event) {
@@ -286,6 +313,12 @@ impl RedHatBoy {
             sprite_sheet: sheet,
             image,
         }
+    }
+
+    fn update(&mut self) {
+        // TODO: Explain why this forces us to derive the state machine as copy?
+        // - somehow it consumes self via mut self ??? I don't get it
+        self.state_machine = self.state_machine.update();
     }
 
     fn draw(&self, renderer: &Renderer) {
