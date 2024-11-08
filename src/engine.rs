@@ -1,11 +1,10 @@
 use crate::browser;
-use anyhow::{anyhow, Context, Error, Result};
+use crate::engine::input::*;
+use anyhow::{anyhow, Error, Result};
 // ELI5: web assembly is a single threaded environment, so Rc RefCell > Mutex
 use async_trait::async_trait;
-use futures::channel::mpsc::{unbounded, UnboundedReceiver};
 use futures::channel::oneshot::channel;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::{
     // unchecked_ref (unsafe) cast from Javascript type to Rust type
@@ -14,47 +13,10 @@ use wasm_bindgen::{
     JsCast,
     JsValue,
 };
-use web_sys::{CanvasRenderingContext2d, HtmlImageElement, KeyboardEvent};
+use web_sys::{CanvasRenderingContext2d, HtmlImageElement};
 
 // length of a frame in milliseconds
 const FRAME_SIZE: f32 = 1.0 / 60.0 * 1000.0;
-
-#[derive(Debug)]
-/// Because we can't determine what kind of KeyboardEvent is returned :
-/// - this enum wraps the event as a key up or key down
-/// - effectively let's us manage one channel (as opposed to two+)
-enum KeyPress {
-    KeyUp(KeyboardEvent),
-    KeyDown(KeyboardEvent),
-}
-
-#[derive(Debug)]
-/// HashMap values represent a generic physical keyboard as defined by :
-/// - https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values
-pub struct KeyState {
-    pressed_keys: HashMap<String, KeyboardEvent>,
-}
-
-impl KeyState {
-    fn new() -> Self {
-        KeyState {
-            pressed_keys: HashMap::new(),
-        }
-    }
-
-    pub fn is_pressed(&self, code: &str) -> bool {
-        self.pressed_keys.contains_key(code)
-    }
-
-    fn set_pressed(&mut self, code: &str, e: KeyboardEvent) {
-        // TODO: Explain why .into() on insert, but not contains_key + remove?
-        self.pressed_keys.insert(code.into(), e);
-    }
-
-    fn set_released(&mut self, code: &str) {
-        self.pressed_keys.remove(code);
-    }
-}
 
 #[async_trait(?Send)]
 pub trait Game {
@@ -73,7 +35,8 @@ type SharedLoopClosure = Rc<RefCell<Option<browser::LoopClosure>>>;
 
 impl GameLoop {
     pub async fn start(game: impl Game + 'static) -> Result<()> {
-        let mut keyevent_receiver = prepare_input()?;
+        let mut input_handler = InputHandler::new()?;
+
         let mut game = game.initialize().await?;
         let mut game_loop = GameLoop {
             last_frame: browser::now()?,
@@ -87,18 +50,23 @@ impl GameLoop {
         let f: SharedLoopClosure = Rc::new(RefCell::new(None));
         let g = f.clone();
 
-        let mut keystate = KeyState::new();
         *g.borrow_mut() = Some(browser::create_raf_closure(move |perf: f64| {
-            process_input(&mut keystate, &mut keyevent_receiver);
+            input_handler.update();
+
             game_loop.accumulated_delta += (perf - game_loop.last_frame) as f32;
+            // a) catch up on physics update
+            // - multiple updates can occur in a single frame to catch up
+            // - doesn't block browser responsiveness via requestAnimationFrame
+            // ELI5: why did I think moving draw() inside is more performant?
             while game_loop.accumulated_delta > FRAME_SIZE {
                 // TODO: clarify if we are able to also ref keystate here
                 // because it's not mutable?
-                game.update(&keystate);
+                game.update(input_handler.get_keystate());
                 game_loop.accumulated_delta -= FRAME_SIZE;
             }
-            game_loop.last_frame = perf;
+            // b) draw after while loop updates
             game.draw(&renderer);
+            game_loop.last_frame = perf;
             let _ = browser::request_animation_frame(f.borrow().as_ref().unwrap());
         }));
 
@@ -205,51 +173,135 @@ pub async fn load_image(source: &str) -> Result<HtmlImageElement> {
     Ok(image)
 }
 
-/// Prepare Input :
-/// - listens for key events (KeyPress)
-/// - puts key events into a channel
-fn prepare_input() -> Result<UnboundedReceiver<KeyPress>> {
-    // TODO: explain unbounded channel
-    let (keydown_sender, keyevent_receiver) = unbounded();
-    let keydown_sender = Rc::new(RefCell::new(keydown_sender));
-    let keyup_sender = Rc::clone(&keydown_sender);
+pub mod input {
+    use crate::browser;
+    use anyhow::{Context, Result};
+    use futures::channel::mpsc::{unbounded, UnboundedReceiver};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+    use wasm_bindgen::JsCast;
+    use web_sys::KeyboardEvent;
 
-    let onkeydown = browser::closure_wrap(Box::new(move |keycode: KeyboardEvent| {
-        log!("Key pressed: {}", keycode.key());
-        let _ = keydown_sender
-            .borrow_mut()
-            .start_send(KeyPress::KeyDown(keycode));
-    }) as Box<dyn FnMut(KeyboardEvent)>);
-    let onkeyup = browser::closure_wrap(Box::new(move |keycode: KeyboardEvent| {
-        log!("Key released: {}", keycode.key());
-        let _ = keyup_sender
-            .borrow_mut()
-            .start_send(KeyPress::KeyUp(keycode));
-    }) as Box<dyn FnMut(KeyboardEvent)>);
+    #[derive(Debug)]
+    /// Because we can't determine what kind of KeyboardEvent is returned :
+    /// - this enum wraps the event as a key up or key down
+    /// - effectively let's us manage one channel (as opposed to two+)
+    enum KeyPress {
+        KeyUp(KeyboardEvent),
+        KeyDown(KeyboardEvent),
+    }
 
-    let window = browser::window().context("Window element not found")?;
+    #[derive(Debug)]
+    /// HashMap values represent a generic physical keyboard as defined by :
+    /// - https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values
+    pub struct KeyState {
+        pressed_keys: HashMap<String, KeyboardEvent>,
+    }
 
-    window.set_onkeydown(Some(onkeydown.as_ref().unchecked_ref()));
-    window.set_onkeyup(Some(onkeyup.as_ref().unchecked_ref()));
+    impl KeyState {
+        pub fn new() -> Self {
+            KeyState {
+                pressed_keys: HashMap::new(),
+            }
+        }
 
-    onkeydown.forget();
-    onkeyup.forget();
+        pub fn is_pressed(&self, code: &str) -> bool {
+            self.pressed_keys.contains_key(code)
+        }
 
-    Ok(keyevent_receiver)
-}
+        fn set_pressed(&mut self, code: &str, e: KeyboardEvent) {
+            // Explain why .into() on insert, but not contains_key + remove?
+            // - Hashmap `insert` takes ownership of the key, and into()
+            // converts &str to String
+            // - `contains_key` and `remove` only reference : into() is unneeded
+            self.pressed_keys.insert(code.into(), e);
+        }
 
-/// Process Input :
-/// - Grab all events from key press channel
-/// - Reduce them to KeyState
-fn process_input(state: &mut KeyState, keyevent_receiver: &mut UnboundedReceiver<KeyPress>) {
-    loop {
-        match keyevent_receiver.try_next() {
-            Ok(None) => break,
-            Err(_err) => break,
-            Ok(Some(e)) => match e {
-                KeyPress::KeyUp(e) => state.set_released(&e.code()),
-                KeyPress::KeyDown(e) => state.set_pressed(&e.code(), e),
-            },
-        };
+        fn set_released(&mut self, code: &str) {
+            self.pressed_keys.remove(code);
+        }
+    }
+
+    /// InputHandler encapsulates both :
+    /// - keystate: KeyState
+    /// - receiver: UnboundedReceiver<KeyPress>
+    ///
+    /// Provides a cleaner interface and hides implemntation details of input
+    /// processing
+    pub struct InputHandler {
+        keystate: KeyState,
+        receiver: UnboundedReceiver<KeyPress>,
+    }
+
+    impl InputHandler {
+        // a) Self (capital S) refers to the TYPE itself (InputHandler)
+        //  - Self in new() is good practice, easier to maintain because it
+        //  reduces change, like if the type name changes
+        // b) self (lowercase s) refers to an INSTANCE of the type
+        pub fn new() -> Result<Self> {
+            let (keystate, receiver) = prepare_input()?;
+            Ok(InputHandler { keystate, receiver })
+        }
+
+        pub fn update(&mut self) {
+            process_input(&mut self.keystate, &mut self.receiver);
+        }
+
+        pub fn get_keystate(&self) -> &KeyState {
+            &self.keystate
+        }
+    }
+
+    /// Prepare Input :
+    /// - listens for key events (KeyPress)
+    /// - puts key events into a channel
+    fn prepare_input() -> Result<(KeyState, UnboundedReceiver<KeyPress>)> {
+        // unbounded() channels have no limits on it buffer size, used here:
+        // - we don't expect keyboard events to overflow memory
+        // - we process events quickly in each frame
+        // - avoiding backpressure handling simplifies the code
+        let (keydown_sender, keyevent_receiver) = unbounded();
+        let keydown_sender = Rc::new(RefCell::new(keydown_sender));
+        let keyup_sender = Rc::clone(&keydown_sender);
+
+        let onkeydown = browser::closure_wrap(Box::new(move |keycode: KeyboardEvent| {
+            log!("Key pressed: {}", keycode.key());
+            let _ = keydown_sender
+                .borrow_mut()
+                .start_send(KeyPress::KeyDown(keycode));
+        }) as Box<dyn FnMut(KeyboardEvent)>);
+        let onkeyup = browser::closure_wrap(Box::new(move |keycode: KeyboardEvent| {
+            log!("Key released: {}", keycode.key());
+            let _ = keyup_sender
+                .borrow_mut()
+                .start_send(KeyPress::KeyUp(keycode));
+        }) as Box<dyn FnMut(KeyboardEvent)>);
+
+        let window = browser::window().context("Window element not found")?;
+
+        window.set_onkeydown(Some(onkeydown.as_ref().unchecked_ref()));
+        window.set_onkeyup(Some(onkeyup.as_ref().unchecked_ref()));
+
+        onkeydown.forget();
+        onkeyup.forget();
+
+        Ok((KeyState::new(), keyevent_receiver))
+    }
+
+    /// Process Input :
+    /// - Grab all events from key press channel
+    /// - Reduce them to KeyState
+    fn process_input(state: &mut KeyState, keyevent_receiver: &mut UnboundedReceiver<KeyPress>) {
+        loop {
+            match keyevent_receiver.try_next() {
+                Ok(None) => break,
+                Err(_err) => break,
+                Ok(Some(e)) => match e {
+                    KeyPress::KeyUp(e) => state.set_released(&e.code()),
+                    KeyPress::KeyDown(e) => state.set_pressed(&e.code(), e),
+                },
+            };
+        }
     }
 }

@@ -1,6 +1,6 @@
 use crate::browser;
 use crate::engine;
-use crate::engine::KeyState;
+use crate::engine::input::*;
 use crate::engine::{Game, Point, Rect, Renderer};
 use crate::log;
 // browser > lib (root) > this crate
@@ -73,6 +73,7 @@ impl Game for WalkTheDog {
         }))
     }
 
+    // ELI5: Graph `update` delegate from lib.rs > engine.rs > game.rs
     fn update(&mut self, keystate: &KeyState) {
         self.frame = (self.frame + 1) % (animation::TOTAL_FRAMES + 1);
         self.rhb.as_mut().unwrap().update();
