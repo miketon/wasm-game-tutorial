@@ -18,10 +18,60 @@ use web_sys::{CanvasRenderingContext2d, HtmlImageElement};
 // length of a frame in milliseconds
 const FRAME_SIZE: f32 = 1.0 / 60.0 * 1000.0;
 
+/// TABLE:
+/// ┌──────────── Game Architecture Overview ──────────────┐
+/// │                                                      │
+/// │    Browser              Engine              Game     │
+/// │  ┌─────────┐         ┌─────────┐          ┌───────┐  │
+/// │  │HTML/JS  │◄────────┤GameLoop │◄─────────┤Game   │  │
+/// │  │Canvas   │         │RAF      │          │Trait  │  │
+/// │  └─────────┘         └─────────┘          └───────┘  │
+/// │       ▲                   ▲                    ▲     │
+/// │       │                   │                    │     │
+/// │  ┌─────────┐         ┌─────────┐          ┌───────┐  │
+/// │  │Events   │────────►│Input    │─────────►│Update │  │
+/// │  │Keyboard │         │Handler  │          │State  │  │
+/// │  └─────────┘         └─────────┘          └───────┘  │
+/// └──────────────────────────────────────────────────────┘
 #[async_trait(?Send)]
 pub trait Game {
     async fn initialize(&self) -> Result<Box<dyn Game>>;
+    /// TABLE:
+    /// ┌────────────── Input Processing Flow ──────────────────┐
+    /// │                                                       │
+    /// │ KeyboardEvent                                         │
+    /// │     │                                                 │
+    /// │     ▼                                                 │
+    /// │ KeyPress(enum)        UnboundedReceiver               │
+    /// │  ├─KeyUp ─────────────────────┐                       │
+    /// │  └─KeyDown                    │                       │
+    /// │     │                         │                       │
+    /// │     ▼                         ▼                       │
+    /// │ InputHandler ──────────► KeyState(HashMap)            │
+    /// │     │                    │                            │
+    /// │     └──update()──────────┘                            │
+    /// │                                                       │
+    /// └───────────────────────────────────────────────────────┘
     fn update(&mut self, keystate: &KeyState);
+    /// TABLE:
+    /// ┌────────────── Animation Frame Flow ──────────────────┐
+    /// │                                                      │
+    /// │ RAF Closure                                          │
+    /// │     │                                                │
+    /// │     ▼                                                │
+    /// │ Update Input                                         │
+    /// │     │                                                │
+    /// │     ▼                                                │
+    /// │ While Loop                                           │
+    /// │  └─► Update Physics (if accumulated_delta > FRAME)   │
+    /// │     │                                                │
+    /// │     ▼                                                │
+    /// │ Draw Frame                                           │
+    /// │     │                                                │
+    /// │     ▼                                                │
+    /// │ Schedule Next Frame                                  │
+    /// │                                                      │
+    /// └──────────────────────────────────────────────────────┘
     fn draw(&self, context: &Renderer);
 }
 
@@ -223,12 +273,27 @@ pub mod input {
         }
     }
 
+    /// ┌────────────── Input Processing Flow ──────────────────┐
+    /// │                                                       │
+    /// │ KeyboardEvent                                         │
+    /// │     │                                                 │
+    /// │     ▼                                                 │
+    /// │ KeyPress(enum)        UnboundedReceiver               │
+    /// │  ├─KeyUp ─────────────────────┐                       │
+    /// │  └─KeyDown                    │                       │
+    /// │     │                         │                       │
+    /// │     ▼                         ▼                       │
+    /// │ InputHandler ──────────► KeyState(HashMap)            │
+    /// │     │                    │                            │
+    /// │     └──update()──────────┘                            │
+    /// └───────────────────────────────────────────────────────┘
+    ///
     /// InputHandler encapsulates both :
     /// - keystate: KeyState
     /// - receiver: UnboundedReceiver<KeyPress>
     ///
-    /// Provides a cleaner interface and hides implemntation details of input
-    /// processing
+    /// Provides a cleaner interface and hides implemntation
+    /// details of input processing
     pub struct InputHandler {
         keystate: KeyState,
         receiver: UnboundedReceiver<KeyPress>,

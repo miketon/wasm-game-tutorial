@@ -4,7 +4,6 @@ use crate::engine::input::*;
 use crate::engine::{Game, Point, Rect, Renderer};
 use crate::log;
 // browser > lib (root) > this crate
-use self::constants::{animation, canvas, MOVEMENT_SPEED};
 use self::red_hat_boy_states::*;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -12,40 +11,35 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
-mod constants {
-
-    pub mod animation {
-        pub const FRAME_DURATION: u8 = 3;
-        pub const TOTAL_FRAMES: u8 = 23;
-    }
-
-    pub mod canvas {
-        pub const WIDTH: f32 = 600.0;
-        pub const HEIGHT: f32 = 600.0;
-    }
-
-    pub const MOVEMENT_SPEED: i16 = 3;
-}
-
-/// Walk The Dog : Game Trait implementation
-/// - initialize, update and draw
+/// TABLE:
+/// ┌───────────────────────────────────────────────────────────┐
+/// │                   WalkTheDog Game Update                  │
+/// │                                                           │
+/// │  ┌─────────────┐        ┌─────────────┐      ┌────────┐   │
+/// │  │   lib.rs    │        │  engine.rs  │      │game.rs │   │
+/// │  │ GameLoop    ├───────►│   update()  ├─────►│WalkDog │   │
+/// │  │  update()   │        │             │      │update()│   │
+/// │  └─────────────┘        └─────────────┘      └───┬────┘   │
+/// │                                                  │        │
+/// │                              ┌──────────────────►│        │
+/// │                              │                   │        │
+/// │                        ┌─────┴─────┐             │        │
+/// │                        │  KeyState │             │        │
+/// │                        └───────────┘             ▼        │
+/// │                                            Game State     │
+/// └───────────────────────────────────────────────────────────┘
+///
+/// Call hiearchy for update:
+/// 1. lib.rs: GameLoop::update() calls engine::update()
+/// 2. engine.rs: update() calls game::update() with current KeyState
+/// 3. game.rs: WalkTheDog::update() processes inputs and updates game state
 pub struct WalkTheDog {
-    image: Option<HtmlImageElement>,
-    sheet: Option<Sheet>,
-    frame: u8,
-    position: Point,
     rhb: Option<RedHatBoy>,
 }
 
 impl WalkTheDog {
     pub fn new() -> Self {
-        WalkTheDog {
-            image: None,
-            sheet: None,
-            frame: 0,
-            position: Point { x: 0, y: 0 },
-            rhb: None,
-        }
+        WalkTheDog { rhb: None }
     }
 }
 
@@ -62,10 +56,6 @@ impl Game for WalkTheDog {
         log!("[game.rs::WalkTheDog] initialize");
 
         Ok(Box::new(WalkTheDog {
-            image: image.clone(),
-            sheet: sheet.clone(),
-            frame: self.frame,
-            position: self.position,
             rhb: Some(RedHatBoy::new(
                 sheet.clone().ok_or_else(|| anyhow!("No Sheet Present"))?,
                 image.clone().ok_or_else(|| anyhow!("No Image Present"))?,
@@ -73,72 +63,23 @@ impl Game for WalkTheDog {
         }))
     }
 
-    // ELI5: Graph `update` delegate from lib.rs > engine.rs > game.rs
     fn update(&mut self, keystate: &KeyState) {
-        self.frame = (self.frame + 1) % (animation::TOTAL_FRAMES + 1);
+        // RedHatBoy::update animation state
         self.rhb.as_mut().unwrap().update();
 
-        let mut velocity = Point { x: 0, y: 0 };
-        if keystate.is_pressed("ArrowDown") {
-            velocity.y += MOVEMENT_SPEED;
-        }
-        if keystate.is_pressed("ArrowUp") {
-            velocity.y -= MOVEMENT_SPEED;
-        }
+        // process input and trigger state changes
         if keystate.is_pressed("ArrowRight") {
-            velocity.x += MOVEMENT_SPEED;
             self.rhb.as_mut().unwrap().run_right();
         }
-        if keystate.is_pressed("ArrowLeft") {
-            velocity.x -= MOVEMENT_SPEED;
-        }
-
-        self.position.x += velocity.x;
-        self.position.y += velocity.y;
     }
 
     fn draw(&self, renderer: &Renderer) {
-        let current_sprite = (self.frame / animation::FRAME_DURATION) + 1;
-        let frame_name = format!("Run ({}).png", current_sprite);
-        let sprite = match self
-            .sheet // start with self.sheet (Option<Sheet>)
-            .as_ref() // Convert Option<Sheet> to Option<&Sheet>
-            // if sheet exists, try to get frame
-            .and_then(|sheet| sheet.frames.get(&frame_name))
-        {
-            Some(sprite) => sprite,
-            None => {
-                log!("Warning : Sprite not found: {}", frame_name);
-                return;
-            }
-        };
         renderer.clear(&Rect {
             x: 0.0,
             y: 0.0,
-            width: canvas::WIDTH,
-            height: canvas::HEIGHT,
+            width: 600.0,
+            height: 600.0,
         });
-
-        if let Some(image) = self.image.as_ref() {
-            renderer.draw_image(
-                image,
-                // sets frame from sprite to draw
-                &Rect {
-                    x: sprite.frame.x.into(),
-                    y: sprite.frame.y.into(),
-                    width: sprite.frame.w.into(),
-                    height: sprite.frame.h.into(),
-                },
-                // sets frame where to draw on canvax
-                &Rect {
-                    x: self.position.x.into(),
-                    y: self.position.y.into(),
-                    width: sprite.frame.w.into(),
-                    height: sprite.frame.h.into(),
-                },
-            );
-        };
-
         self.rhb.as_ref().unwrap().draw(renderer);
     }
 }
@@ -171,14 +112,22 @@ struct SheetRect {
 mod red_hat_boy_states {
     use crate::engine::Point;
 
-    // physics
+    // animation timing/tick for playback
+    pub const FRAME_TICK_RATE: u8 = 3;
+
+    // physics consts
     const FLOOR: i16 = 475;
     const RUNNING_SPEED: i16 = 3;
-    // rendering
+
+    // sprite consts
     const IDLE_NAME: &str = "Idle";
     const RUN_NAME: &str = "Run";
-    const IDLE_FRAMES: u8 = 29;
-    const RUN_FRAMES: u8 = 23;
+    // actual sprite count as defined by sheet json
+    const IDLE_FRAME_COUNT: u8 = 10;
+    const RUN_FRAME_COUNT: u8 = 8;
+    // sprite count formatted for animation timing/tick
+    const IDLE_FRAMES: u8 = IDLE_FRAME_COUNT * FRAME_TICK_RATE - 1;
+    const RUN_FRAMES: u8 = RUN_FRAME_COUNT * FRAME_TICK_RATE - 1;
 
     #[derive(Debug, Copy, Clone)]
     pub struct Idle;
@@ -346,6 +295,10 @@ struct RedHatBoy {
     image: HtmlImageElement,
 }
 
+/// RedHatBoy
+/// - update() -> statemachine::update()
+/// - handle state transition -> RedHatBoyStateMachine::transition()
+///     - run_right() ...
 impl RedHatBoy {
     fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
         RedHatBoy {
@@ -369,7 +322,7 @@ impl RedHatBoy {
         let frame_name = format!(
             "{} ({}).png",
             self.state.frame_name(),
-            (self.state.context().frame / 3) + 1
+            (self.state.context().frame / red_hat_boy_states::FRAME_TICK_RATE) + 1
         );
         let sprite = self.sheet.frames.get(&frame_name).expect("Cell not found");
 
