@@ -113,6 +113,8 @@ struct SheetRect {
 /// transition without using ONLY the methods provided :
 /// - PUBLIC  : RedHatBoyState and RedHatBoyContext struct are public
 /// - PRIVATE : internal members are private
+///
+/// Doesn't know about RedHatBoyStateMachine ... TODO: Explain why?
 mod red_hat_boy_states {
     use crate::engine::Point;
 
@@ -178,11 +180,15 @@ mod red_hat_boy_states {
             IDLE_NAME
         }
 
-        pub fn update(&mut self) {
+        // TODO: explain why we updated this to consume and return the SAME
+        // state, given that it's not changing states???
+        // - they somehow don't make unnecessary copies because they take
+        // ownership of self when called and then return it???
+        pub fn update(mut self) -> Self {
             self.context = self.context.update(IDLE_FRAMES);
+            self
         }
 
-        // TODO: Explain how this taking mut self consumes the current state?
         pub fn run(self) -> RedHatBoyState<Running> {
             RedHatBoyState {
                 context: self.context.on_state_transition().run_right(),
@@ -196,8 +202,9 @@ mod red_hat_boy_states {
             RUN_NAME
         }
 
-        pub fn update(&mut self) {
+        pub fn update(mut self) -> Self {
             self.context = self.context.update(RUN_FRAMES);
+            self
         }
 
         pub fn slide(self) -> RedHatBoyState<Sliding> {
@@ -269,6 +276,12 @@ enum RedHatBoyStateMachine {
     Sliding(RedHatBoyState<Sliding>),
 }
 
+impl From<RedHatBoyState<Idle>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<Idle>) -> Self {
+        RedHatBoyStateMachine::Idle(state)
+    }
+}
+
 impl From<RedHatBoyState<Running>> for RedHatBoyStateMachine {
     fn from(state: RedHatBoyState<Running>) -> Self {
         RedHatBoyStateMachine::Running(state)
@@ -284,36 +297,30 @@ impl From<RedHatBoyState<Sliding>> for RedHatBoyStateMachine {
 pub enum Event {
     Run,
     Slide,
+    Update,
 }
 
 impl RedHatBoyStateMachine {
-    fn update(self) -> Self {
-        use RedHatBoyStateMachine::*;
-        match self {
-            Idle(mut state) => {
-                state.update();
-                Idle(state)
-            }
-            Running(mut state) => {
-                state.update();
-                Running(state)
-            }
-            Sliding(mut state) => {
-                state.update();
-                Sliding(state)
-            }
-        }
-    }
-
+    // CONSUMING self (state instance) and returning a new Self (state)
+    // - the `self` passed in as an argument is moved -> no longer accessible
+    // - &mut self would return a reference
+    // TODO: Explain how to determine when to consume vs referencing
     fn transition(self, event: Event) -> Self {
         use RedHatBoyStateMachine::*;
         match (self, event) {
             (Idle(state), Event::Run) => state.run().into(),
             (Running(state), Event::Slide) => state.slide().into(),
+            (Idle(state), Event::Update) => state.update().into(),
+            (Running(state), Event::Update) => state.update().into(),
             // TODO: Explain why this doesn't just defeat the point of a well
             // defined match set if we gonna just default here?
             _ => self,
         }
+    }
+
+    // TODO: Explain why converting updates into a transition event
+    fn update(self) -> Self {
+        self.transition(Event::Update)
     }
 
     fn frame_name(&self) -> &str {
