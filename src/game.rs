@@ -71,6 +71,10 @@ impl Game for WalkTheDog {
         if keystate.is_pressed("ArrowRight") {
             self.rhb.as_mut().unwrap().run_right();
         }
+
+        if keystate.is_pressed("ArrowDown") {
+            self.rhb.as_mut().unwrap().slide();
+        }
     }
 
     fn draw(&self, renderer: &Renderer) {
@@ -122,18 +126,24 @@ mod red_hat_boy_states {
     // sprite consts
     const IDLE_NAME: &str = "Idle";
     const RUN_NAME: &str = "Run";
+    const SLIDE_NAME: &str = "Slide";
     // actual sprite count as defined by sheet json
     const IDLE_FRAME_COUNT: u8 = 10;
     const RUN_FRAME_COUNT: u8 = 8;
+    const SLIDE_FRAME_COUNT: u8 = 5;
     // sprite count formatted for animation timing/tick
     const IDLE_FRAMES: u8 = IDLE_FRAME_COUNT * FRAME_TICK_RATE - 1;
     const RUN_FRAMES: u8 = RUN_FRAME_COUNT * FRAME_TICK_RATE - 1;
+    const SLIDE_FRAMES: u8 = SLIDE_FRAME_COUNT * FRAME_TICK_RATE - 1;
 
     #[derive(Debug, Copy, Clone)]
     pub struct Idle;
 
     #[derive(Debug, Copy, Clone)]
     pub struct Running;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Sliding;
 
     #[derive(Debug, Copy, Clone)]
     pub struct RedHatBoyState<S> {
@@ -163,13 +173,6 @@ mod red_hat_boy_states {
                 _state: Idle {},
             }
         }
-        // TODO: Explain how this taking mut self consumes the current state?
-        pub fn run(self) -> RedHatBoyState<Running> {
-            RedHatBoyState {
-                context: self.context.on_state_transition().run_right(),
-                _state: Running {},
-            }
-        }
 
         pub fn frame_name(&self) -> &str {
             IDLE_NAME
@@ -177,6 +180,14 @@ mod red_hat_boy_states {
 
         pub fn update(&mut self) {
             self.context = self.context.update(IDLE_FRAMES);
+        }
+
+        // TODO: Explain how this taking mut self consumes the current state?
+        pub fn run(self) -> RedHatBoyState<Running> {
+            RedHatBoyState {
+                context: self.context.on_state_transition().run_right(),
+                _state: Running {},
+            }
         }
     }
 
@@ -187,6 +198,23 @@ mod red_hat_boy_states {
 
         pub fn update(&mut self) {
             self.context = self.context.update(RUN_FRAMES);
+        }
+
+        pub fn slide(self) -> RedHatBoyState<Sliding> {
+            RedHatBoyState {
+                context: self.context.on_state_transition(),
+                _state: Sliding {},
+            }
+        }
+    }
+
+    impl RedHatBoyState<Sliding> {
+        pub fn frame_name(&self) -> &str {
+            SLIDE_NAME
+        }
+
+        pub fn update(&mut self) {
+            self.context = self.context.update(SLIDE_FRAMES);
         }
     }
 
@@ -238,6 +266,7 @@ mod red_hat_boy_states {
 enum RedHatBoyStateMachine {
     Idle(RedHatBoyState<Idle>),
     Running(RedHatBoyState<Running>),
+    Sliding(RedHatBoyState<Sliding>),
 }
 
 impl From<RedHatBoyState<Running>> for RedHatBoyStateMachine {
@@ -246,8 +275,15 @@ impl From<RedHatBoyState<Running>> for RedHatBoyStateMachine {
     }
 }
 
+impl From<RedHatBoyState<Sliding>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<Sliding>) -> Self {
+        RedHatBoyStateMachine::Sliding(state)
+    }
+}
+
 pub enum Event {
     Run,
+    Slide,
 }
 
 impl RedHatBoyStateMachine {
@@ -262,6 +298,10 @@ impl RedHatBoyStateMachine {
                 state.update();
                 Running(state)
             }
+            Sliding(mut state) => {
+                state.update();
+                Sliding(state)
+            }
         }
     }
 
@@ -269,22 +309,29 @@ impl RedHatBoyStateMachine {
         use RedHatBoyStateMachine::*;
         match (self, event) {
             (Idle(state), Event::Run) => state.run().into(),
+            (Running(state), Event::Slide) => state.slide().into(),
+            // TODO: Explain why this doesn't just defeat the point of a well
+            // defined match set if we gonna just default here?
             _ => self,
         }
     }
 
     fn frame_name(&self) -> &str {
+        use RedHatBoyStateMachine::*;
         match self {
-            RedHatBoyStateMachine::Idle(state) => state.frame_name(),
-            RedHatBoyStateMachine::Running(state) => state.frame_name(),
+            Idle(state) => state.frame_name(),
+            Running(state) => state.frame_name(),
+            Sliding(state) => state.frame_name(),
         }
     }
 
     // TODO: Find out if this can be simplified with a macro?
     fn context(&self) -> &RedHatBoyContext {
+        use RedHatBoyStateMachine::*;
         match self {
-            RedHatBoyStateMachine::Idle(state) => state.context(),
-            RedHatBoyStateMachine::Running(state) => state.context(),
+            Idle(state) => state.context(),
+            Running(state) => state.context(),
+            Sliding(state) => state.context(),
         }
     }
 }
@@ -316,6 +363,10 @@ impl RedHatBoy {
 
     fn run_right(&mut self) {
         self.state = self.state.transition(Event::Run);
+    }
+
+    fn slide(&mut self) {
+        self.state = self.state.transition(Event::Slide);
     }
 
     fn draw(&self, renderer: &Renderer) {
