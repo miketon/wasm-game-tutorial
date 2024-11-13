@@ -220,9 +220,29 @@ mod red_hat_boy_states {
             SLIDE_NAME
         }
 
-        pub fn update(&mut self) {
+        // TODO: Explain why this update isn't returning another state here ...
+        // Any additional options?
+        pub fn update(mut self) -> SlideToggled {
             self.context = self.context.update(SLIDE_FRAMES);
+            // on every update we check if animation is complete
+            if self.context.frame >= SLIDE_FRAMES {
+                SlideToggled::Done(self.stand())
+            } else {
+                SlideToggled::InProgress(self)
+            }
         }
+
+        pub fn stand(self) -> RedHatBoyState<Running> {
+            RedHatBoyState {
+                context: self.context.on_state_transition(),
+                _state: Running {},
+            }
+        }
+    }
+
+    pub enum SlideToggled {
+        Done(RedHatBoyState<Running>),
+        InProgress(RedHatBoyState<Sliding>),
     }
 
     #[derive(Debug, Copy, Clone)]
@@ -269,6 +289,12 @@ mod red_hat_boy_states {
     }
 }
 
+pub enum Event {
+    Run,
+    Slide,
+    Update,
+}
+
 #[derive(Debug, Copy, Clone)]
 enum RedHatBoyStateMachine {
     Idle(RedHatBoyState<Idle>),
@@ -294,10 +320,17 @@ impl From<RedHatBoyState<Sliding>> for RedHatBoyStateMachine {
     }
 }
 
-pub enum Event {
-    Run,
-    Slide,
-    Update,
+impl From<SlideToggled> for RedHatBoyStateMachine {
+    fn from(slide_state: SlideToggled) -> Self {
+        use SlideToggled::*;
+        match slide_state {
+            // TODO: Explain how this code infers :
+            // - Complete : RedHatBoyState<Running>
+            // - Sliding : RedHatBoyState<Sliding>
+            Done(running_state) => running_state.into(),
+            InProgress(sliding_state) => sliding_state.into(),
+        }
+    }
 }
 
 impl RedHatBoyStateMachine {
@@ -312,6 +345,7 @@ impl RedHatBoyStateMachine {
             (Running(state), Event::Slide) => state.slide().into(),
             (Idle(state), Event::Update) => state.update().into(),
             (Running(state), Event::Update) => state.update().into(),
+            (Sliding(state), Event::Update) => state.update().into(),
             // TODO: Explain why this doesn't just defeat the point of a well
             // defined match set if we gonna just default here?
             _ => self,
