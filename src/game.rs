@@ -2,7 +2,6 @@ use crate::browser;
 use crate::engine;
 use crate::engine::input::*;
 use crate::engine::{Game, Point, Rect, Renderer};
-use crate::log;
 // browser > lib (root) > this crate
 use self::red_hat_boy_states::*;
 use anyhow::{anyhow, Result};
@@ -33,58 +32,60 @@ use web_sys::HtmlImageElement;
 /// 1. lib.rs: GameLoop::update() calls engine::update()
 /// 2. engine.rs: update() calls game::update() with current KeyState
 /// 3. game.rs: WalkTheDog::update() processes inputs and updates game state
-pub struct WalkTheDog {
-    rhb: Option<RedHatBoy>,
+pub enum WalkTheDog {
+    Loading,
+    Loaded(RedHatBoy),
 }
 
 impl WalkTheDog {
     pub fn new() -> Self {
-        WalkTheDog { rhb: None }
+        WalkTheDog::Loading
     }
 }
 
 #[async_trait(?Send)]
 impl Game for WalkTheDog {
+    // TODO: Explain how returning Game ensures initialized is called ONCE only
     async fn initialize(&self) -> Result<Box<dyn Game>> {
-        // TODO: Explain how come we are taking self and throwing it a way? :
-        // - replacing it with WalkTheDog
-        // - thrown on the heap?
-
-        let sheet = Some(browser::fetch_json::<Sheet>("rhb.json").await?);
-        let image = Some(engine::load_image("rhb.png").await?);
-
-        log!("[game.rs::WalkTheDog] initialize");
-
-        Ok(Box::new(WalkTheDog {
-            rhb: Some(RedHatBoy::new(
-                sheet.clone().ok_or_else(|| anyhow!("No Sheet Present"))?,
-                image.clone().ok_or_else(|| anyhow!("No Image Present"))?,
-            )),
-        }))
+        const JSON: &str = "rhb.json";
+        const IMAGE: &str = "rhb.png";
+        match self {
+            WalkTheDog::Loading => {
+                let sheet = Some(browser::fetch_json::<Sheet>(JSON).await?);
+                let image = Some(engine::load_image(IMAGE).await?);
+                let rhb = RedHatBoy::new(
+                    sheet.clone().ok_or_else(|| anyhow!("No Sheet Found"))?,
+                    image.clone().ok_or_else(|| anyhow!("No Image Found"))?,
+                );
+                Ok(Box::new(WalkTheDog::Loaded(rhb)))
+            }
+            WalkTheDog::Loaded(_) => Err(anyhow!("Game is already initialized")),
+        }
     }
 
     fn update(&mut self, keystate: &KeyState) {
-        // RedHatBoy::update animation state
-        self.rhb.as_mut().unwrap().update();
-
-        // process input and trigger state changes
-        if keystate.is_pressed("ArrowRight") {
-            self.rhb.as_mut().unwrap().run_right();
-        }
-
-        if keystate.is_pressed("ArrowDown") {
-            self.rhb.as_mut().unwrap().slide();
+        if let WalkTheDog::Loaded(rhb) = self {
+            // process input and trigger state changes
+            if keystate.is_pressed("ArrowRight") {
+                rhb.run_right();
+            }
+            if keystate.is_pressed("ArrowDown") {
+                rhb.slide();
+            }
+            rhb.update();
         }
     }
 
     fn draw(&self, renderer: &Renderer) {
-        renderer.clear(&Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 600.0,
-            height: 600.0,
-        });
-        self.rhb.as_ref().unwrap().draw(renderer);
+        if let WalkTheDog::Loaded(rhb) = self {
+            renderer.clear(&Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 600.0,
+                height: 600.0,
+            });
+            rhb.draw(renderer);
+        }
     }
 }
 
@@ -377,7 +378,7 @@ impl RedHatBoyStateMachine {
     }
 }
 
-struct RedHatBoy {
+pub struct RedHatBoy {
     state: RedHatBoyStateMachine,
     sheet: Sheet,
     image: HtmlImageElement,
