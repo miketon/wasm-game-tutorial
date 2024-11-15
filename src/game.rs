@@ -4,8 +4,9 @@ use crate::engine::input::*;
 use crate::engine::{Game, Point, Rect, Renderer};
 // browser > lib (root) > this crate
 use self::red_hat_boy_states::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
+use futures::join;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
@@ -38,8 +39,26 @@ pub enum WalkTheDog {
 }
 
 impl WalkTheDog {
+    // TODO: Explain why lifetime static is needed here???
+    const SHEET_PATH: &'static str = "rhb.json";
+    const IMAGE_PATH: &'static str = "rhb.png";
+
     pub fn new() -> Self {
         WalkTheDog::Loading
+    }
+    async fn load_sprite_sheet() -> Result<Sheet> {
+        browser::fetch_json::<Sheet>(Self::SHEET_PATH)
+            .await
+            .with_context(|| format!("Failed to load sprite sheet from : {}", Self::SHEET_PATH))
+    }
+
+    async fn load_sprite_image() -> Result<HtmlImageElement> {
+        engine::load_image(Self::IMAGE_PATH).await.with_context(|| {
+            format!(
+                "Failed to load sprite image resource from : {}",
+                Self::IMAGE_PATH
+            )
+        })
     }
 }
 
@@ -47,16 +66,18 @@ impl WalkTheDog {
 impl Game for WalkTheDog {
     // TODO: Explain how returning Game ensures initialized is called ONCE only
     async fn initialize(&self) -> Result<Box<dyn Game>> {
-        const JSON: &str = "rhb.json";
-        const IMAGE: &str = "rhb.png";
         match self {
             WalkTheDog::Loading => {
-                let sheet = Some(browser::fetch_json::<Sheet>(JSON).await?);
-                let image = Some(engine::load_image(IMAGE).await?);
-                let rhb = RedHatBoy::new(
-                    sheet.clone().ok_or_else(|| anyhow!("No Sheet Found"))?,
-                    image.clone().ok_or_else(|| anyhow!("No Image Found"))?,
-                );
+                // ELI5: join!() converts serial to parallel resource loading
+                // if image takes 300ms and json takes 200ms, perf improvement:
+                // - serial   : 500ms (300ms + 200ms)  // additive of each load
+                // - parallel : 300ms (300ms or 200ms) // gated on longest load
+                // context : json and image are independent resources
+                let (sheet_result, image_result) =
+                    join!(Self::load_sprite_sheet(), Self::load_sprite_image(),);
+                let sheet = sheet_result?;
+                let image = image_result?;
+                let rhb = RedHatBoy::new(sheet, image);
                 Ok(Box::new(WalkTheDog::Loaded(rhb)))
             }
             WalkTheDog::Loaded(_) => Err(anyhow!("Game is already initialized")),
