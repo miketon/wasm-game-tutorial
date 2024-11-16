@@ -68,11 +68,25 @@ impl Game for WalkTheDog {
     async fn initialize(&self) -> Result<Box<dyn Game>> {
         match self {
             WalkTheDog::Loading => {
-                // ELI5: join!() converts serial to parallel resource loading
-                // if image takes 300ms and json takes 200ms, perf improvement:
-                // - serial   : 500ms (300ms + 200ms)  // additive of each load
-                // - parallel : 300ms (300ms or 200ms) // gated on longest load
-                // context : json and image are independent resources
+                // TABLE:
+                // +------------+----------------------------+----------------+
+                // |   Method   |       Resource Time       |    Total Time   |
+                // +------------+----------------------------+----------------+
+                // |            | Image: 300ms, JSON: 200ms |                 |
+                // +------------+----------------------------+----------------+
+                // |  Serial    | Image → JSON              | 500ms           |
+                // |  Loading   | (One after another)       | (300ms + 200ms) |
+                // +------------+----------------------------+----------------+
+                // |  Parallel  | Image || JSON             | 300ms           |
+                // |  Loading   | (Simultaneous loading)    | (max time wins) |
+                // +------------+----------------------------+----------------+
+                //
+                // Key Benefits of Parallel Loading:
+                // ┌────────────────────────────────────────────────┐
+                // │ ✓ Independent resources load simultaneously    │
+                // │ ✓ Total time determined by slowest resource    │
+                // │ ✓ Saves 200ms in this example (40% faster)     │
+                // └────────────────────────────────────────────────┘
                 let (sheet_result, image_result) =
                     join!(Self::load_sprite_sheet(), Self::load_sprite_image(),);
                 let sheet = sheet_result?;
@@ -92,6 +106,9 @@ impl Game for WalkTheDog {
             }
             if keystate.is_pressed("ArrowDown") {
                 rhb.slide();
+            }
+            if keystate.is_pressed("Space") {
+                rhb.jump();
             }
             rhb.update();
         }
@@ -151,14 +168,17 @@ mod red_hat_boy_states {
     const IDLE_NAME: &str = "Idle";
     const RUN_NAME: &str = "Run";
     const SLIDE_NAME: &str = "Slide";
+    const JUMP_NAME: &str = "Jump";
     // actual sprite count as defined by sheet json
     const IDLE_FRAME_COUNT: u8 = 10;
     const RUN_FRAME_COUNT: u8 = 8;
     const SLIDE_FRAME_COUNT: u8 = 5;
+    const JUMP_FRAME_COUNT: u8 = 12;
     // sprite count formatted for animation timing/tick
     const IDLE_FRAMES: u8 = IDLE_FRAME_COUNT * FRAME_TICK_RATE - 1;
     const RUN_FRAMES: u8 = RUN_FRAME_COUNT * FRAME_TICK_RATE - 1;
     const SLIDE_FRAMES: u8 = SLIDE_FRAME_COUNT * FRAME_TICK_RATE - 1;
+    const JUMP_FRAMES: u8 = JUMP_FRAME_COUNT * FRAME_TICK_RATE - 1;
 
     #[derive(Debug, Copy, Clone)]
     pub struct Idle;
@@ -168,6 +188,9 @@ mod red_hat_boy_states {
 
     #[derive(Debug, Copy, Clone)]
     pub struct Sliding;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Jumping;
 
     #[derive(Debug, Copy, Clone)]
     pub struct RedHatBoyState<S> {
@@ -235,6 +258,13 @@ mod red_hat_boy_states {
                 _state: Sliding {},
             }
         }
+
+        pub fn jump(self) -> RedHatBoyState<Jumping> {
+            RedHatBoyState {
+                context: self.context().on_state_transition(),
+                _state: Jumping {},
+            }
+        }
     }
 
     impl RedHatBoyState<Sliding> {
@@ -259,6 +289,17 @@ mod red_hat_boy_states {
                 context: self.context.on_state_transition(),
                 _state: Running {},
             }
+        }
+    }
+
+    impl RedHatBoyState<Jumping> {
+        pub fn frame_name(&self) -> &str {
+            JUMP_NAME
+        }
+
+        pub fn update(mut self) -> Self {
+            self.context = self.context.update(JUMP_FRAMES);
+            self
         }
     }
 
@@ -314,6 +355,7 @@ mod red_hat_boy_states {
 pub enum Event {
     Run,
     Slide,
+    Jump,
     Update,
 }
 
@@ -322,6 +364,7 @@ enum RedHatBoyStateMachine {
     Idle(RedHatBoyState<Idle>),
     Running(RedHatBoyState<Running>),
     Sliding(RedHatBoyState<Sliding>),
+    Jumping(RedHatBoyState<Jumping>),
 }
 
 impl From<RedHatBoyState<Idle>> for RedHatBoyStateMachine {
@@ -339,6 +382,12 @@ impl From<RedHatBoyState<Running>> for RedHatBoyStateMachine {
 impl From<RedHatBoyState<Sliding>> for RedHatBoyStateMachine {
     fn from(state: RedHatBoyState<Sliding>) -> Self {
         RedHatBoyStateMachine::Sliding(state)
+    }
+}
+
+impl From<RedHatBoyState<Jumping>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<Jumping>) -> Self {
+        RedHatBoyStateMachine::Jumping(state)
     }
 }
 
@@ -365,9 +414,11 @@ impl RedHatBoyStateMachine {
         match (self, event) {
             (Idle(state), Event::Run) => state.run().into(),
             (Running(state), Event::Slide) => state.slide().into(),
+            (Running(state), Event::Jump) => state.jump().into(),
             (Idle(state), Event::Update) => state.update().into(),
             (Running(state), Event::Update) => state.update().into(),
             (Sliding(state), Event::Update) => state.update().into(),
+            (Jumping(state), Event::Update) => state.update().into(),
             // TODO: Explain why this doesn't just defeat the point of a well
             // defined match set if we gonna just default here?
             _ => self,
@@ -385,6 +436,7 @@ impl RedHatBoyStateMachine {
             Idle(state) => state.frame_name(),
             Running(state) => state.frame_name(),
             Sliding(state) => state.frame_name(),
+            Jumping(state) => state.frame_name(),
         }
     }
 
@@ -395,6 +447,7 @@ impl RedHatBoyStateMachine {
             Idle(state) => state.context(),
             Running(state) => state.context(),
             Sliding(state) => state.context(),
+            Jumping(state) => state.context(),
         }
     }
 }
@@ -430,6 +483,10 @@ impl RedHatBoy {
 
     fn slide(&mut self) {
         self.state = self.state.transition(Event::Slide);
+    }
+
+    fn jump(&mut self) {
+        self.state = self.state.transition(Event::Jump);
     }
 
     fn draw(&self, renderer: &Renderer) {
