@@ -11,30 +11,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
-/// TABLE:
-/// ┌───────────────────────────────────────────────────────────┐
-/// │                   WalkTheDog Game Update                  │
-/// │                                                           │
-/// │  ┌─────────────┐        ┌─────────────┐      ┌────────┐   │
-/// │  │   lib.rs    │        │  engine.rs  │      │game.rs │   │
-/// │  │ GameLoop    ├───────►│   update()  ├─────►│WalkDog │   │
-/// │  │  update()   │        │             │      │update()│   │
-/// │  └─────────────┘        └─────────────┘      └───┬────┘   │
-/// │                                                  │        │
-/// │                              ┌──────────────────►│        │
-/// │                              │                   │        │
-/// │                        ┌─────┴─────┐             │        │
-/// │                        │  KeyState │             │        │
-/// │                        └───────────┘             ▼        │
-/// │                                            Game State     │
-/// └───────────────────────────────────────────────────────────┘
-///
-/// Call hiearchy for update:
-/// 1. lib.rs: GameLoop::update() calls engine::update()
-/// 2. engine.rs: update() calls game::update() with current KeyState
-/// 3. game.rs: WalkTheDog::update() processes inputs and updates game state
 pub enum WalkTheDog {
+    /// Initialize state while resources are being loaded
+    /// Transition to `Loaded` once initialization is complete
     Loading,
+
+    /// Active game state with initialized RedHatBoy assets
     Loaded(RedHatBoy),
 }
 
@@ -62,31 +44,51 @@ impl WalkTheDog {
     }
 }
 
+/// TABLE:
+/// ┌───────────────────────────────────────────────────────────┐
+/// │                   impl Game Update                        │
+/// │                                                           │
+/// │  ┌─────────────┐        ┌─────────────┐      ┌────────┐   │
+/// │  │   lib.rs    │        │  engine.rs  │      │game.rs │   │
+/// │  │ GameLoop    ├───────►│   update()  ├─────►│WalkDog │   │
+/// │  │  update()   │        │             │      │update()│   │
+/// │  └─────────────┘        └─────────────┘      └───┬────┘   │
+/// │                                                  │        │
+/// │                              ┌──────────────────►│        │
+/// │                              │                   │        │
+/// │                        ┌─────┴─────┐             │        │
+/// │                        │  KeyState │             │        │
+/// │                        └───────────┘             ▼        │
+/// │                                            Game State     │
+/// └───────────────────────────────────────────────────────────┘
+///
+/// Call hiearchy for update:
+/// 1. lib.rs: GameLoop::update() calls engine::update()
+/// 2. engine.rs: update() calls game::update() with current KeyState
+/// 3. game.rs: WalkTheDog::update() processes inputs and updates game state
 #[async_trait(?Send)]
 impl Game for WalkTheDog {
     // TODO: Explain how returning Game ensures initialized is called ONCE only
     async fn initialize(&self) -> Result<Box<dyn Game>> {
         match self {
+            // Key Benefits of Parallel Loading:
+            // ┌────────────────────────────────────────────────┐
+            // │ ✓ Independent resources load simultaneously    │
+            // │ ✓ Total time determined by slowest resource    │
+            // └────────────────────────────────────────────────┘
             WalkTheDog::Loading => {
                 // TABLE:
                 // +------------+----------------------------+----------------+
-                // |   Method   |       Resource Time       |    Total Time   |
+                // |   Method   |       Resource Time        |   Total Time   |
                 // +------------+----------------------------+----------------+
-                // |            | Image: 300ms, JSON: 200ms |                 |
+                // |            | Image: 300ms, JSON: 200ms  |                |
                 // +------------+----------------------------+----------------+
-                // |  Serial    | Image → JSON              | 500ms           |
-                // |  Loading   | (One after another)       | (300ms + 200ms) |
+                // |  Serial    | Image → JSON               | 500ms          |
+                // |  Loading   | (One after another)        | (300ms + 200ms)|
                 // +------------+----------------------------+----------------+
-                // |  Parallel  | Image || JSON             | 300ms           |
-                // |  Loading   | (Simultaneous loading)    | (max time wins) |
+                // |  Parallel  | Image || JSON              | 300ms          |
+                // |  Loading   | (Simultaneous loading)     | (max time wins)|
                 // +------------+----------------------------+----------------+
-                //
-                // Key Benefits of Parallel Loading:
-                // ┌────────────────────────────────────────────────┐
-                // │ ✓ Independent resources load simultaneously    │
-                // │ ✓ Total time determined by slowest resource    │
-                // │ ✓ Saves 200ms in this example (40% faster)     │
-                // └────────────────────────────────────────────────┘
                 let (sheet_result, image_result) =
                     join!(Self::load_sprite_sheet(), Self::load_sprite_image(),);
                 let sheet = sheet_result?;
@@ -162,6 +164,7 @@ mod red_hat_boy_states {
 
     // physics consts
     const JUMP_SPEED: i16 = -25; // negative because top left is origin
+    const GRAVITY: i16 = 1;
     const FLOOR: i16 = 475;
     const RUNNING_SPEED: i16 = 3;
 
@@ -180,6 +183,16 @@ mod red_hat_boy_states {
     const RUN_FRAMES: u8 = RUN_FRAME_COUNT * FRAME_TICK_RATE - 1;
     const SLIDE_FRAMES: u8 = SLIDE_FRAME_COUNT * FRAME_TICK_RATE - 1;
     const JUMP_FRAMES: u8 = JUMP_FRAME_COUNT * FRAME_TICK_RATE - 1;
+
+    pub enum IsJumping {
+        Done(RedHatBoyState<Running>),
+        InProgress(RedHatBoyState<Jumping>),
+    }
+
+    pub enum IsSliding {
+        Done(RedHatBoyState<Running>),
+        InProgress(RedHatBoyState<Sliding>),
+    }
 
     #[derive(Debug, Copy, Clone)]
     pub struct Idle;
@@ -278,13 +291,13 @@ mod red_hat_boy_states {
 
         // TODO: Explain why this update isn't returning another state here ...
         // Any additional options?
-        pub fn update(mut self) -> SlideToggled {
+        pub fn update(mut self) -> IsSliding {
             self.context = self.context.update(SLIDE_FRAMES);
             // on every update we check if animation is complete
             if self.context.frame >= SLIDE_FRAMES {
-                SlideToggled::Done(self.stand())
+                IsSliding::Done(self.stand())
             } else {
-                SlideToggled::InProgress(self)
+                IsSliding::InProgress(self)
             }
         }
 
@@ -301,15 +314,21 @@ mod red_hat_boy_states {
             JUMP_NAME
         }
 
-        pub fn update(mut self) -> Self {
+        pub fn update(mut self) -> IsJumping {
             self.context = self.context.update(JUMP_FRAMES);
-            self
+            if self.context.position.y >= FLOOR {
+                IsJumping::Done(self.land())
+            } else {
+                IsJumping::InProgress(self)
+            }
         }
-    }
 
-    pub enum SlideToggled {
-        Done(RedHatBoyState<Running>),
-        InProgress(RedHatBoyState<Sliding>),
+        pub fn land(self) -> RedHatBoyState<Running> {
+            RedHatBoyState {
+                context: self.context.on_state_transition(),
+                _state: Running {},
+            }
+        }
     }
 
     #[derive(Debug, Copy, Clone)]
@@ -327,6 +346,8 @@ mod red_hat_boy_states {
         /// - set frame_count -> render frame
         /// - set velocity -> position
         pub fn update(mut self, frame_count: u8) -> Self {
+            // add gravity
+            self.velocity.y += GRAVITY;
             // update render frame
             if self.frame < frame_count {
                 self.frame += 1;
@@ -336,6 +357,11 @@ mod red_hat_boy_states {
             // update transform position
             self.position.x += self.velocity.x;
             self.position.y += self.velocity.y;
+
+            // detect collision and resolve
+            if self.position.y > FLOOR {
+                self.position.y = FLOOR;
+            }
             self
         }
 
@@ -399,10 +425,20 @@ impl From<RedHatBoyState<Jumping>> for RedHatBoyStateMachine {
     }
 }
 
-impl From<SlideToggled> for RedHatBoyStateMachine {
-    fn from(slide_state: SlideToggled) -> Self {
-        use SlideToggled::*;
-        match slide_state {
+impl From<IsJumping> for RedHatBoyStateMachine {
+    fn from(is_jumping: IsJumping) -> Self {
+        use IsJumping::*;
+        match is_jumping {
+            Done(running_state) => running_state.into(),
+            InProgress(jumping_state) => jumping_state.into(),
+        }
+    }
+}
+
+impl From<IsSliding> for RedHatBoyStateMachine {
+    fn from(is_sliding: IsSliding) -> Self {
+        use IsSliding::*;
+        match is_sliding {
             // TODO: Explain how this code infers :
             // - Complete : RedHatBoyState<Running>
             // - Sliding : RedHatBoyState<Sliding>
