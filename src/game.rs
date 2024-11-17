@@ -1,7 +1,7 @@
 use crate::browser;
 use crate::engine;
 use crate::engine::input::*;
-use crate::engine::{Game, Point, Rect, Renderer};
+use crate::engine::{Game, Image, Point, Rect, Renderer};
 // browser > lib (root) > this crate
 use self::red_hat_boy_states::*;
 use anyhow::{anyhow, Context, Result};
@@ -11,13 +11,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
+pub struct Walk {
+    boy: RedHatBoy,
+    background: Image,
+}
+
 pub enum WalkTheDog {
     /// Initialize state while resources are being loaded
     /// Transition to `Loaded` once initialization is complete
     Loading,
 
     /// Active game state with initialized RedHatBoy assets
-    Loaded(RedHatBoy),
+    Loaded(Walk),
 }
 
 impl WalkTheDog {
@@ -93,38 +98,45 @@ impl Game for WalkTheDog {
                     join!(Self::load_sprite_sheet(), Self::load_sprite_image(),);
                 let sheet = sheet_result?;
                 let image = image_result?;
+                let background = engine::load_image("BG.png").await?;
                 let rhb = RedHatBoy::new(sheet, image);
-                Ok(Box::new(WalkTheDog::Loaded(rhb)))
+                let walk = Walk {
+                    boy: rhb,
+                    background: Image::new(background, Point { x: 0, y: 0 }),
+                };
+                Ok(Box::new(WalkTheDog::Loaded(walk)))
             }
             WalkTheDog::Loaded(_) => Err(anyhow!("Game is already initialized")),
         }
     }
 
     fn update(&mut self, keystate: &KeyState) {
-        if let WalkTheDog::Loaded(rhb) = self {
+        if let WalkTheDog::Loaded(walk) = self {
             // process input and trigger state changes
             if keystate.is_pressed("ArrowRight") {
-                rhb.run_right();
+                walk.boy.run_right();
             }
             if keystate.is_pressed("ArrowDown") {
-                rhb.slide();
+                walk.boy.slide();
             }
             if keystate.is_pressed("Space") {
-                rhb.jump();
+                walk.boy.jump();
             }
-            rhb.update();
+            walk.boy.update();
         }
     }
 
     fn draw(&self, renderer: &Renderer) {
-        if let WalkTheDog::Loaded(rhb) = self {
+        if let WalkTheDog::Loaded(walk) = self {
             renderer.clear(&Rect {
                 x: 0.0,
                 y: 0.0,
                 width: 600.0,
                 height: 600.0,
             });
-            rhb.draw(renderer);
+            // NOTE: Draw order matters : background -> foreground
+            walk.background.draw(renderer);
+            walk.boy.draw(renderer);
         }
     }
 }
