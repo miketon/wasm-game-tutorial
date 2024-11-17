@@ -161,6 +161,7 @@ mod red_hat_boy_states {
     pub const FRAME_TICK_RATE: u8 = 3;
 
     // physics consts
+    const JUMP_SPEED: i16 = -25; // negative because top left is origin
     const FLOOR: i16 = 475;
     const RUNNING_SPEED: i16 = 3;
 
@@ -261,7 +262,10 @@ mod red_hat_boy_states {
 
         pub fn jump(self) -> RedHatBoyState<Jumping> {
             RedHatBoyState {
-                context: self.context().on_state_transition(),
+                context: self
+                    .context()
+                    .set_vertical_velocity(JUMP_SPEED)
+                    .on_state_transition(),
                 _state: Jumping {},
             }
         }
@@ -309,9 +313,9 @@ mod red_hat_boy_states {
     }
 
     #[derive(Debug, Copy, Clone)]
-    /// Shared data to track current :
-    /// - frame::draw
-    /// - rect::position
+    /// Shared data for :
+    /// - physics : position + velocity
+    /// - display : state + frame count
     pub struct RedHatBoyContext {
         pub frame: u8,
         pub position: Point,
@@ -319,9 +323,9 @@ mod red_hat_boy_states {
     }
 
     impl RedHatBoyContext {
-        /// RedHadBoyContext::update(self, frame_count)
-        /// - update frame_count -> render frame
-        /// - update velocity -> position
+        /// ::update per frame
+        /// - set frame_count -> render frame
+        /// - set velocity -> position
         pub fn update(mut self, frame_count: u8) -> Self {
             // update render frame
             if self.frame < frame_count {
@@ -335,18 +339,22 @@ mod red_hat_boy_states {
             self
         }
 
-        /// Handle state transition :: prevent RUNTIME ERROR
-        /// TODO: explain is there a new Self being replaced???
+        /// ::on_state_transition -> prevent RUNTIME ERROR
+        /// Reset to frame 0 on transition :
+        /// - because each state will variable frame count
+        /// - else we risk accessing out of index frame => runtime ERROR
         fn on_state_transition(mut self) -> Self {
-            // Reset to frame 0 on transition to prevent runtime ERROR
-            // - because each state will variable frame count
-            // - else we risk accessing out of index frame => runtime ERROR
             self.frame = 0;
             self
         }
 
         fn run_right(mut self) -> Self {
             self.velocity.x = RUNNING_SPEED;
+            self
+        }
+
+        fn set_vertical_velocity(mut self, y: i16) -> Self {
+            self.velocity.y = y;
             self
         }
     }
