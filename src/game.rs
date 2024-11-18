@@ -11,12 +11,39 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
-pub struct Walk {
-    boy: RedHatBoy,
-    background: Image,
-    stone: Image,
-}
-
+/// TABLE:
+/// ┌───────────────────── Game Architecture Overview ────────────────────────┐
+/// │                                                                         │
+/// │                              Update Flow                                │
+/// │                                                                         │
+/// │    ┌─────────────┐          ┌─────────────┐          ┌─────────────┐    │
+/// │    │   lib.rs    │  update  │  engine.rs  │  update  │   game.rs   │    │
+/// │    │  GameLoop   ├─────────►│             ├─────────►│  WalkTheDog │    │
+/// │    │  update()   │          │  update()   │          │  update()   │    │
+/// │    └─────────────┘          └──────┬──────┘          └──────┬──────┘    │
+/// │                                    │                        │           │
+/// │                              ┌─────┴──────┐            ┌────┴─────┐     │
+/// │                              │  KeyState  │            │  Update  │     │
+/// │                              │  Keyboard  ├────────────► Game     │     │
+/// │                              │  Input     │            │ State    │     │
+/// │                              └────────────┘            └──────────┘     │
+/// │                                                                         │
+/// ├──────────────────────── Call Sequence ──────────────────────────────────┤
+/// │                                                                         │
+/// │  1. Frame Update Cycle                                                  │
+/// │     └─► GameLoop.update() initiates frame processing                    │
+/// │                                                                         │
+/// │  2. Input Processing                                                    │
+/// │     └─► engine.update() captures and processes KeyState                 │
+/// │                                                                         │
+/// │  3. Game State Update                                                   │
+/// │     └─► WalkTheDog.update() manages:                                    │
+/// │         ├─► Input Processing: Handle keyboard events                    │
+/// │         ├─► Character States: Update animations and positions           │
+/// │         ├─► World Updates: Modify game environment                      │
+/// │         └─► Collision Detection: Check for object interactions          │
+/// │                                                                         │
+/// └─────────────────────────────────────────────────────────────────────────┘
 pub enum WalkTheDog {
     /// Initialize state while resources are being loaded
     /// Transition to `Loaded` once initialization is complete
@@ -50,28 +77,6 @@ impl WalkTheDog {
     }
 }
 
-/// TABLE:
-/// ┌───────────────────────────────────────────────────────────┐
-/// │                   impl Game Update                        │
-/// │                                                           │
-/// │  ┌─────────────┐        ┌─────────────┐      ┌────────┐   │
-/// │  │   lib.rs    │        │  engine.rs  │      │game.rs │   │
-/// │  │ GameLoop    ├───────►│   update()  ├─────►│WalkDog │   │
-/// │  │  update()   │        │             │      │update()│   │
-/// │  └─────────────┘        └─────────────┘      └───┬────┘   │
-/// │                                                  │        │
-/// │                              ┌──────────────────►│        │
-/// │                              │                   │        │
-/// │                        ┌─────┴─────┐             │        │
-/// │                        │  KeyState │             │        │
-/// │                        └───────────┘             ▼        │
-/// │                                            Game State     │
-/// └───────────────────────────────────────────────────────────┘
-///
-/// Call hiearchy for update:
-/// 1. lib.rs: GameLoop::update() calls engine::update()
-/// 2. engine.rs: update() calls game::update() with current KeyState
-/// 3. game.rs: WalkTheDog::update() processes inputs and updates game state
 #[async_trait(?Send)]
 impl Game for WalkTheDog {
     // TODO: Explain how returning Game ensures initialized is called ONCE only
@@ -143,6 +148,12 @@ impl Game for WalkTheDog {
             walk.stone.draw(renderer);
         }
     }
+}
+
+pub struct Walk {
+    boy: RedHatBoy,
+    background: Image,
+    stone: Image,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
