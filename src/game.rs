@@ -14,6 +14,7 @@ use web_sys::HtmlImageElement;
 pub struct Walk {
     boy: RedHatBoy,
     background: Image,
+    stone: Image,
 }
 
 pub enum WalkTheDog {
@@ -99,10 +100,12 @@ impl Game for WalkTheDog {
                 let sheet = sheet_result?;
                 let image = image_result?;
                 let background = engine::load_image("BG.png").await?;
+                let stone = engine::load_image("Stone.png").await?;
                 let rhb = RedHatBoy::new(sheet, image);
                 let walk = Walk {
                     boy: rhb,
                     background: Image::new(background, Point { x: 0, y: 0 }),
+                    stone: Image::new(stone, Point { x: 150, y: 546 }),
                 };
                 Ok(Box::new(WalkTheDog::Loaded(walk)))
             }
@@ -137,6 +140,7 @@ impl Game for WalkTheDog {
             // NOTE: Draw order matters : background -> foreground
             walk.background.draw(renderer);
             walk.boy.draw(renderer);
+            walk.stone.draw(renderer);
         }
     }
 }
