@@ -1,9 +1,10 @@
+use self::red_hat_boy_states::*;
 use crate::browser;
 use crate::engine;
 use crate::engine::input::*;
+#[cfg(debug_assertions)]
+use crate::engine::BoundingBox;
 use crate::engine::{Game, Image, Point, Rect, Renderer};
-// browser > lib (root) > this crate
-use self::red_hat_boy_states::*;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -584,6 +585,17 @@ impl RedHatBoy {
                 height: sprite.frame.h.into(),
             },
         );
+        #[cfg(debug_assertions)]
+        let bbox = BoundingBox::new(
+            Point {
+                x: self.position().x,
+                y: self.position().y,
+            },
+            sprite.frame.w.into(),
+            sprite.frame.h.into(),
+        );
+        #[cfg(debug_assertions)]
+        renderer.draw_bounding_box(&bbox, "#ff0000");
     }
 
     // Addresses Law of Demeter

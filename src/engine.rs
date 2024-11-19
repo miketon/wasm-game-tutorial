@@ -170,20 +170,50 @@ impl Renderer {
             .draw_image_with_html_image_element(image, position.x.into(), position.y.into())
             .expect("Drawing (draw_entire_image) is throwing exceptions! Unrecoverable error");
     }
+
+    #[cfg(debug_assertions)]
+    pub fn draw_bounding_box(&self, bbox: &BoundingBox, color: &str) {
+        // Save current context
+        self.context.save();
+        // Set debug visual style
+        self.context.set_stroke_style(&JsValue::from_str(color));
+        self.context.set_line_width(2.0);
+        // Draw debug bounding box
+        self.context.stroke_rect(
+            bbox.position.x as f64,
+            bbox.position.y as f64,
+            bbox.width as f64,
+            bbox.height as f64,
+        );
+        // Restore original context
+        self.context.restore();
+    }
 }
 
 pub struct Image {
     element: HtmlImageElement,
     position: Point,
+    #[cfg(debug_assertions)]
+    bounding_box: BoundingBox,
 }
 
 impl Image {
     pub fn new(element: HtmlImageElement, position: Point) -> Self {
-        Self { element, position }
+        #[cfg(debug_assertions)]
+        let bounding_box =
+            BoundingBox::new(position, element.width() as f32, element.height() as f32);
+        Self {
+            element,
+            position,
+            #[cfg(debug_assertions)]
+            bounding_box,
+        }
     }
 
     pub fn draw(&self, renderer: &Renderer) {
-        renderer.draw_entire_image(&self.element, &self.position)
+        renderer.draw_entire_image(&self.element, &self.position);
+        #[cfg(debug_assertions)]
+        renderer.draw_bounding_box(&self.bounding_box, "#0000ff");
     }
 }
 
@@ -199,6 +229,25 @@ pub struct Rect {
 pub struct Point {
     pub x: i16,
     pub y: i16,
+}
+
+#[cfg(debug_assertions)]
+#[derive(Debug, Clone, Copy)]
+pub struct BoundingBox {
+    pub position: Point,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[cfg(debug_assertions)]
+impl BoundingBox {
+    pub fn new(position: Point, width: f32, height: f32) -> Self {
+        Self {
+            position,
+            width,
+            height,
+        }
+    }
 }
 
 /// Asynchronously load an image from a given source path
