@@ -3,7 +3,7 @@ use crate::browser;
 use crate::engine;
 use crate::engine::input::*;
 #[cfg(debug_assertions)]
-use crate::engine::BoundingBox;
+use crate::engine::{BoundingBox, DebugDraw};
 use crate::engine::{Game, Image, Point, Rect, Renderer};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -569,7 +569,7 @@ impl RedHatBoy {
         );
         let sprite = self.sheet.frames.get(&frame_name).expect("Cell not found");
 
-        renderer.draw_image(
+        renderer.draw_sprite(
             &self.image,
             &Rect {
                 x: sprite.frame.x.into(),
@@ -585,17 +585,9 @@ impl RedHatBoy {
                 height: sprite.frame.h.into(),
             },
         );
+
         #[cfg(debug_assertions)]
-        let bbox = BoundingBox::new(
-            Point {
-                x: self.position().x,
-                y: self.position().y,
-            },
-            sprite.frame.w.into(),
-            sprite.frame.h.into(),
-        );
-        #[cfg(debug_assertions)]
-        renderer.draw_bounding_box(&bbox, "#ff0000");
+        self.draw_debug(renderer);
     }
 
     // Addresses Law of Demeter
@@ -604,6 +596,27 @@ impl RedHatBoy {
     // - previously we manually called the full path at each entry
     fn position(&self) -> Point {
         self.state.context().position
+    }
+}
+
+#[cfg(debug_assertions)]
+impl DebugDraw for RedHatBoy {
+    fn draw_debug(&self, renderer: &Renderer) {
+        let frame_name = format!(
+            "{} ({}).png",
+            self.state.frame_name(),
+            (self.state.context().frame / red_hat_boy_states::FRAME_TICK_RATE) + 1
+        );
+        let sprite = self.sheet.frames.get(&frame_name).expect("Cell not found");
+        let bbox = BoundingBox::new(
+            Point {
+                x: self.position().x,
+                y: self.position().y,
+            },
+            sprite.frame.w.into(),
+            sprite.frame.h.into(),
+        );
+        renderer.draw_bounding_box(&bbox, "#ff0000");
     }
 }
 

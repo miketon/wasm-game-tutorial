@@ -145,27 +145,27 @@ impl Renderer {
         );
     }
 
-    /// draw_image() method :
-    /// - image: image to draw
-    /// - frame: rect of the current frame from src sheet to draw
+    /// draw_sprite() method :
+    /// - image_src: image sheet source to draw from
+    /// - frame_id: rect of the current frame from src sheet to draw
     /// - destination : rect of where on canvas to draw image
-    pub fn draw_image(&self, image: &HtmlImageElement, frame: &Rect, destination: &Rect) {
+    pub fn draw_sprite(&self, image_src: &HtmlImageElement, frame_id: &Rect, destination: &Rect) {
         self.context
             .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-                image,
-                frame.x.into(),
-                frame.y.into(),
-                frame.width.into(),
-                frame.height.into(),
+                image_src,
+                frame_id.x.into(),
+                frame_id.y.into(),
+                frame_id.width.into(),
+                frame_id.height.into(),
                 destination.x.into(),
                 destination.y.into(),
                 destination.width.into(),
                 destination.height.into(),
             )
-            .expect("Drawing (draw_image) is throwing exceptions! Unrecoverable error");
+            .expect("Drawing (draw_sprite) is throwing exceptions! Unrecoverable error");
     }
 
-    pub fn draw_entire_image(&self, image: &HtmlImageElement, position: &Point) {
+    pub fn draw_image(&self, image: &HtmlImageElement, position: &Point) {
         self.context
             .draw_image_with_html_image_element(image, position.x.into(), position.y.into())
             .expect("Drawing (draw_entire_image) is throwing exceptions! Unrecoverable error");
@@ -211,9 +211,9 @@ impl Image {
     }
 
     pub fn draw(&self, renderer: &Renderer) {
-        renderer.draw_entire_image(&self.element, &self.position);
+        renderer.draw_image(&self.element, &self.position);
         #[cfg(debug_assertions)]
-        renderer.draw_bounding_box(&self.bounding_box, "#0000ff");
+        self.bounding_box.draw_debug(renderer);
     }
 }
 
@@ -247,6 +247,13 @@ impl BoundingBox {
             width,
             height,
         }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl DebugDraw for BoundingBox {
+    fn draw_debug(&self, renderer: &Renderer) {
+        renderer.draw_bounding_box(self, "#00ff00");
     }
 }
 
@@ -440,4 +447,9 @@ pub mod input {
             };
         }
     }
+}
+
+#[cfg(debug_assertions)]
+pub trait DebugDraw {
+    fn draw_debug(&self, renderer: &Renderer);
 }
