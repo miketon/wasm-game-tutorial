@@ -72,7 +72,7 @@ pub trait Game {
     /// │ Schedule Next Frame                                  │
     /// │                                                      │
     /// └──────────────────────────────────────────────────────┘
-    fn draw(&self, context: &Renderer);
+    fn draw(&mut self, context: &Renderer);
 }
 
 #[derive(Debug)]
@@ -193,19 +193,16 @@ impl Renderer {
 pub struct Image {
     element: HtmlImageElement,
     position: Point,
-    #[cfg(debug_assertions)]
     bounding_box: BoundingBox,
 }
 
 impl Image {
     pub fn new(element: HtmlImageElement, position: Point) -> Self {
-        #[cfg(debug_assertions)]
         let bounding_box =
             BoundingBox::new(position, element.width() as f32, element.height() as f32);
         Self {
             element,
             position,
-            #[cfg(debug_assertions)]
             bounding_box,
         }
     }
@@ -217,6 +214,12 @@ impl Image {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Point {
+    pub x: i16,
+    pub y: i16,
+}
+
 #[derive(Debug)]
 pub struct Rect {
     pub x: f32,
@@ -225,13 +228,6 @@ pub struct Rect {
     pub height: f32,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Point {
-    pub x: i16,
-    pub y: i16,
-}
-
-#[cfg(debug_assertions)]
 #[derive(Debug, Clone, Copy)]
 pub struct BoundingBox {
     pub position: Point,
@@ -239,7 +235,6 @@ pub struct BoundingBox {
     pub height: f32,
 }
 
-#[cfg(debug_assertions)]
 impl BoundingBox {
     pub fn new(position: Point, width: f32, height: f32) -> Self {
         Self {

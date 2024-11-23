@@ -3,8 +3,8 @@ use crate::browser;
 use crate::engine;
 use crate::engine::input::*;
 #[cfg(debug_assertions)]
-use crate::engine::{BoundingBox, DebugDraw};
-use crate::engine::{Game, Image, Point, Rect, Renderer};
+use crate::engine::DebugDraw;
+use crate::engine::{BoundingBox, Game, Image, Point, Rect, Renderer};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web_sys::HtmlImageElement;
 
-/// TABLE:
+/// TABLE
 /// ┌───────────────────── Game Architecture Overview ────────────────────────┐
 /// │                                                                         │
 /// │                              Update Flow                                │
@@ -135,7 +135,7 @@ impl Game for WalkTheDog {
         }
     }
 
-    fn draw(&self, renderer: &Renderer) {
+    fn draw(&mut self, renderer: &Renderer) {
         if let WalkTheDog::Loaded(walk) = self {
             renderer.clear(&Rect {
                 x: 0.0,
@@ -528,6 +528,7 @@ pub struct RedHatBoy {
     state: RedHatBoyStateMachine,
     sheet: Sheet,
     image: HtmlImageElement,
+    bounding_box: BoundingBox,
 }
 
 /// RedHatBoy
@@ -536,10 +537,16 @@ pub struct RedHatBoy {
 ///     - run_right() ...
 impl RedHatBoy {
     fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
+        let bounding_box = BoundingBox::new(
+            Point { x: 0, y: 0 },
+            image.width() as f32,
+            image.height() as f32,
+        );
         RedHatBoy {
             state: RedHatBoyStateMachine::Idle(RedHatBoyState::new()),
             sheet,
             image,
+            bounding_box,
         }
     }
 
@@ -561,7 +568,7 @@ impl RedHatBoy {
         self.state = self.state.transition(Event::Jump);
     }
 
-    fn draw(&self, renderer: &Renderer) {
+    fn draw(&mut self, renderer: &Renderer) {
         let frame_name = format!(
             "{} ({}).png",
             self.state.frame_name(),
@@ -586,8 +593,17 @@ impl RedHatBoy {
             },
         );
 
+        // TODO: Find a better approach, we are :
+        // - mixing drawing and collision
+        // - AND calculating bounding box even if the sprite has NOT changed
+        self.bounding_box = BoundingBox::new(
+            self.position(),
+            sprite.frame.w.into(),
+            sprite.frame.h.into(),
+        );
+
         #[cfg(debug_assertions)]
-        self.draw_debug(renderer);
+        self.bounding_box.draw_debug(renderer);
     }
 
     // Addresses Law of Demeter
@@ -596,27 +612,6 @@ impl RedHatBoy {
     // - previously we manually called the full path at each entry
     fn position(&self) -> Point {
         self.state.context().position
-    }
-}
-
-#[cfg(debug_assertions)]
-impl DebugDraw for RedHatBoy {
-    fn draw_debug(&self, renderer: &Renderer) {
-        let frame_name = format!(
-            "{} ({}).png",
-            self.state.frame_name(),
-            (self.state.context().frame / red_hat_boy_states::FRAME_TICK_RATE) + 1
-        );
-        let sprite = self.sheet.frames.get(&frame_name).expect("Cell not found");
-        let bbox = BoundingBox::new(
-            Point {
-                x: self.position().x,
-                y: self.position().y,
-            },
-            sprite.frame.w.into(),
-            sprite.frame.h.into(),
-        );
-        renderer.draw_bounding_box(&bbox, "#ff0000");
     }
 }
 
