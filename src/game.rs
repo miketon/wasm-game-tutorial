@@ -4,7 +4,7 @@ use crate::engine;
 use crate::engine::input::*;
 #[cfg(debug_assertions)]
 use crate::engine::DebugDraw;
-use crate::engine::{BoundingBox, Game, Image, Point, Rect, Renderer};
+use crate::engine::{Game, Image, Point, Rect, Renderer};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -138,10 +138,9 @@ impl Game for WalkTheDog {
     fn draw(&mut self, renderer: &Renderer) {
         if let WalkTheDog::Loaded(walk) = self {
             renderer.clear(&Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 600.0,
-                height: 600.0,
+                position: Point { x: 0, y: 0 },
+                width: 600,
+                height: 600,
             });
             // NOTE: Draw order matters : background -> foreground
             walk.background.draw(renderer);
@@ -185,7 +184,7 @@ struct SheetRect {
 ///
 /// Doesn't know about RedHatBoyStateMachine ... TODO: Explain why?
 mod red_hat_boy_states {
-    use crate::engine::Point;
+    use crate::engine::{Point, Rect};
 
     // animation timing/tick for playback
     pub const FRAME_TICK_RATE: u8 = 3;
@@ -251,13 +250,17 @@ mod red_hat_boy_states {
 
     impl RedHatBoyState<Idle> {
         pub fn new() -> Self {
+            let position = Point { x: 0, y: FLOOR };
+            // FIXME: Get sprite size for bounding width and height
+            let bounding_box = Rect::new(position, 320, 320);
             RedHatBoyState {
                 context: RedHatBoyContext {
                     // ah instead of on_state_transition - explicit frame reset
                     // FIXME: find a way to use on_state_transition
                     frame: 0,
-                    position: Point { x: 0, y: FLOOR },
+                    position,
                     velocity: Point { x: 0, y: 0 },
+                    bounding_box,
                 },
                 _state: Idle {},
             }
@@ -367,6 +370,7 @@ mod red_hat_boy_states {
         pub frame: u8,
         pub position: Point,
         pub velocity: Point,
+        pub bounding_box: Rect,
     }
 
     impl RedHatBoyContext {
@@ -374,6 +378,7 @@ mod red_hat_boy_states {
         /// - set frame_count -> render frame
         /// - set velocity -> position
         pub fn update(mut self, frame_count: u8) -> Self {
+            let current_position = self.position;
             // add gravity
             self.velocity.y += GRAVITY;
             // update render frame
@@ -390,6 +395,12 @@ mod red_hat_boy_states {
             if self.position.y > FLOOR {
                 self.position.y = FLOOR;
             }
+
+            // update bounding box if position has changed
+            // FIXME: Replace hardcoded values with actual sprite values
+            if self.position != current_position {
+                self.bounding_box = Rect::new(self.position, 320, 320);
+            }
             self
         }
 
@@ -398,6 +409,7 @@ mod red_hat_boy_states {
         /// - because each state will variable frame count
         /// - else we risk accessing out of index frame => runtime ERROR
         fn on_state_transition(mut self) -> Self {
+            // reset frame
             self.frame = 0;
             self
         }
@@ -528,7 +540,6 @@ pub struct RedHatBoy {
     state: RedHatBoyStateMachine,
     sheet: Sheet,
     image: HtmlImageElement,
-    bounding_box: BoundingBox,
 }
 
 /// RedHatBoy
@@ -537,16 +548,10 @@ pub struct RedHatBoy {
 ///     - run_right() ...
 impl RedHatBoy {
     fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
-        let bounding_box = BoundingBox::new(
-            Point { x: 0, y: 0 },
-            image.width() as f32,
-            image.height() as f32,
-        );
         RedHatBoy {
             state: RedHatBoyStateMachine::Idle(RedHatBoyState::new()),
             sheet,
             image,
-            bounding_box,
         }
     }
 
@@ -554,6 +559,45 @@ impl RedHatBoy {
         // TODO: Explain why this forces us to derive the state machine as copy?
         // - somehow it consumes self via mut self ??? I don't get it
         self.state = self.state.update();
+    }
+
+    // fn update_bounding_box(&mut self) {
+    //     let frame_name = self.get_current_frame_name();
+    //     if let Some(sprite) = self.sheet.frames.get(&frame_name) {
+    //         self.state.context().bounding_box = BoundingBox::new(
+    //             self.position(),
+    //             sprite.frame.w.into(),
+    //             sprite.frame.h.into(),
+    //         );
+    //     }
+    // }
+
+    fn draw(&mut self, renderer: &Renderer) {
+        let frame_name = self.get_current_frame_name();
+        let sprite = self.sheet.frames.get(&frame_name).expect("Cell not found");
+
+        renderer.draw_sprite(
+            &self.image,
+            &Rect {
+                position: Point {
+                    x: sprite.frame.x,
+                    y: sprite.frame.y,
+                },
+                width: sprite.frame.w,
+                height: sprite.frame.h,
+            },
+            &Rect {
+                position: Point {
+                    x: self.position().x,
+                    y: self.position().y,
+                },
+                width: sprite.frame.w,
+                height: sprite.frame.h,
+            },
+        );
+
+        #[cfg(debug_assertions)]
+        self.state.context().bounding_box.draw_debug(renderer);
     }
 
     fn run_right(&mut self) {
@@ -568,50 +612,22 @@ impl RedHatBoy {
         self.state = self.state.transition(Event::Jump);
     }
 
-    fn draw(&mut self, renderer: &Renderer) {
-        let frame_name = format!(
-            "{} ({}).png",
-            self.state.frame_name(),
-            (self.state.context().frame / red_hat_boy_states::FRAME_TICK_RATE) + 1
-        );
-        let sprite = self.sheet.frames.get(&frame_name).expect("Cell not found");
-
-        renderer.draw_sprite(
-            &self.image,
-            &Rect {
-                x: sprite.frame.x.into(),
-                y: sprite.frame.y.into(),
-                width: sprite.frame.w.into(),
-                height: sprite.frame.h.into(),
-            },
-            &Rect {
-                // TODO: Explain why it's ok to diverge from Law of Demeter here
-                x: self.position().x.into(),
-                y: self.position().y.into(),
-                width: sprite.frame.w.into(),
-                height: sprite.frame.h.into(),
-            },
-        );
-
-        // TODO: Find a better approach, we are :
-        // - mixing drawing and collision
-        // - AND calculating bounding box even if the sprite has NOT changed
-        self.bounding_box = BoundingBox::new(
-            self.position(),
-            sprite.frame.w.into(),
-            sprite.frame.h.into(),
-        );
-
-        #[cfg(debug_assertions)]
-        self.bounding_box.draw_debug(renderer);
-    }
-
     // Addresses Law of Demeter
     // - OO style guideline where states should only access their direct
     // nodes, NOT children of those notes
     // - previously we manually called the full path at each entry
     fn position(&self) -> Point {
         self.state.context().position
+    }
+
+    // TODO: check if it makes sense to cache as opposed to calling in both
+    // draw and update_bounding_box
+    fn get_current_frame_name(&self) -> String {
+        format!(
+            "{} ({}).png",
+            self.state.frame_name(),
+            (self.state.context().frame / red_hat_boy_states::FRAME_TICK_RATE) + 1
+        )
     }
 }
 

@@ -138,8 +138,8 @@ pub struct Renderer {
 impl Renderer {
     pub fn clear(&self, rect: &Rect) {
         self.context.clear_rect(
-            rect.x.into(),
-            rect.y.into(),
+            rect.position.x.into(),
+            rect.position.y.into(),
             rect.width.into(),
             rect.height.into(),
         );
@@ -153,12 +153,12 @@ impl Renderer {
         self.context
             .draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
                 image_src,
-                frame_id.x.into(),
-                frame_id.y.into(),
+                frame_id.position.x.into(),
+                frame_id.position.y.into(),
                 frame_id.width.into(),
                 frame_id.height.into(),
-                destination.x.into(),
-                destination.y.into(),
+                destination.position.x.into(),
+                destination.position.y.into(),
                 destination.width.into(),
                 destination.height.into(),
             )
@@ -172,7 +172,7 @@ impl Renderer {
     }
 
     #[cfg(debug_assertions)]
-    pub fn draw_bounding_box(&self, bbox: &BoundingBox, color: &str) {
+    pub fn draw_bounding_box(&self, bbox: &Rect, color: &str) {
         // Save current context
         self.context.save();
         // Set debug visual style
@@ -193,13 +193,13 @@ impl Renderer {
 pub struct Image {
     element: HtmlImageElement,
     position: Point,
-    bounding_box: BoundingBox,
+    bounding_box: Rect,
 }
 
 impl Image {
     pub fn new(element: HtmlImageElement, position: Point) -> Self {
-        let bounding_box =
-            BoundingBox::new(position, element.width() as f32, element.height() as f32);
+        // TODO: Explain why we couldn't into() and had to as i16 explicitly?
+        let bounding_box = Rect::new(position, element.width() as i16, element.height() as i16);
         Self {
             element,
             position,
@@ -214,29 +214,24 @@ impl Image {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Point {
     pub x: i16,
     pub y: i16,
 }
 
-#[derive(Debug)]
-pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
 #[derive(Debug, Clone, Copy)]
-pub struct BoundingBox {
+pub struct Rect {
     pub position: Point,
-    pub width: f32,
-    pub height: f32,
+    pub width: i16,
+    pub height: i16,
 }
 
-impl BoundingBox {
-    pub fn new(position: Point, width: f32, height: f32) -> Self {
+// TODO: explain perf wise if new bounding box every frame is better than
+// - update position on every update
+// - width, height on every transition
+impl Rect {
+    pub fn new(position: Point, width: i16, height: i16) -> Self {
         Self {
             position,
             width,
@@ -246,7 +241,7 @@ impl BoundingBox {
 }
 
 #[cfg(debug_assertions)]
-impl DebugDraw for BoundingBox {
+impl DebugDraw for Rect {
     fn draw_debug(&self, renderer: &Renderer) {
         renderer.draw_bounding_box(self, "#00ff00");
     }
