@@ -4,7 +4,7 @@ use crate::engine;
 use crate::engine::input::*;
 #[cfg(debug_assertions)]
 use crate::engine::DebugDraw;
-use crate::engine::{Game, Image, Point, Rect, Renderer};
+use crate::engine::{Game, Image, Point, Rect, Renderer, Size};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -139,8 +139,10 @@ impl Game for WalkTheDog {
         if let WalkTheDog::Loaded(walk) = self {
             renderer.clear(&Rect {
                 position: Point { x: 0, y: 0 },
-                width: 600,
-                height: 600,
+                size: Size {
+                    width: 600,
+                    height: 600,
+                },
             });
             // NOTE: Draw order matters : background -> foreground
             walk.background.draw(renderer);
@@ -184,7 +186,7 @@ struct SheetRect {
 ///
 /// Doesn't know about RedHatBoyStateMachine ... TODO: Explain why?
 mod red_hat_boy_states {
-    use crate::engine::{Point, Rect};
+    use crate::engine::{Point, Rect, Size};
 
     // animation timing/tick for playback
     pub const FRAME_TICK_RATE: u8 = 3;
@@ -252,7 +254,13 @@ mod red_hat_boy_states {
         pub fn new() -> Self {
             let position = Point { x: 0, y: FLOOR };
             // FIXME: Get sprite size for bounding width and height
-            let bounding_box = Rect::new(position, 320, 320);
+            let bounding_box = Rect::new(
+                position,
+                Size {
+                    width: 320,
+                    height: 320,
+                },
+            );
             RedHatBoyState {
                 context: RedHatBoyContext {
                     // ah instead of on_state_transition - explicit frame reset
@@ -399,7 +407,13 @@ mod red_hat_boy_states {
             // update bounding box if position has changed
             // FIXME: Replace hardcoded values with actual sprite values
             if self.position != current_position {
-                self.bounding_box = Rect::new(self.position, 320, 320);
+                self.bounding_box = Rect::new(
+                    self.position,
+                    Size {
+                        width: 320,
+                        height: 320,
+                    },
+                );
             }
             self
         }
@@ -583,16 +597,20 @@ impl RedHatBoy {
                     x: sprite.frame.x,
                     y: sprite.frame.y,
                 },
-                width: sprite.frame.w,
-                height: sprite.frame.h,
+                size: Size {
+                    width: sprite.frame.w,
+                    height: sprite.frame.h,
+                },
             },
             &Rect {
                 position: Point {
                     x: self.position().x,
                     y: self.position().y,
                 },
-                width: sprite.frame.w,
-                height: sprite.frame.h,
+                size: Size {
+                    width: sprite.frame.w,
+                    height: sprite.frame.h,
+                },
             },
         );
 

@@ -140,8 +140,8 @@ impl Renderer {
         self.context.clear_rect(
             rect.position.x.into(),
             rect.position.y.into(),
-            rect.width.into(),
-            rect.height.into(),
+            rect.size.width.into(),
+            rect.size.height.into(),
         );
     }
 
@@ -155,12 +155,12 @@ impl Renderer {
                 image_src,
                 frame_id.position.x.into(),
                 frame_id.position.y.into(),
-                frame_id.width.into(),
-                frame_id.height.into(),
+                frame_id.size.width.into(),
+                frame_id.size.height.into(),
                 destination.position.x.into(),
                 destination.position.y.into(),
-                destination.width.into(),
-                destination.height.into(),
+                destination.size.width.into(),
+                destination.size.height.into(),
             )
             .expect("Drawing (draw_sprite) is throwing exceptions! Unrecoverable error");
     }
@@ -182,8 +182,8 @@ impl Renderer {
         self.context.stroke_rect(
             bbox.position.x as f64,
             bbox.position.y as f64,
-            bbox.width as f64,
-            bbox.height as f64,
+            bbox.size.width as f64,
+            bbox.size.height as f64,
         );
         // Restore original context
         self.context.restore();
@@ -199,7 +199,13 @@ pub struct Image {
 impl Image {
     pub fn new(element: HtmlImageElement, position: Point) -> Self {
         // TODO: Explain why we couldn't into() and had to as i16 explicitly?
-        let bounding_box = Rect::new(position, element.width() as i16, element.height() as i16);
+        let bounding_box = Rect::new(
+            position,
+            Size {
+                width: element.width() as i16,
+                height: element.height() as i16,
+            },
+        );
         Self {
             element,
             position,
@@ -220,23 +226,24 @@ pub struct Point {
     pub y: i16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Size {
+    pub width: i16,
+    pub height: i16,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
     pub position: Point,
-    pub width: i16,
-    pub height: i16,
+    pub size: Size,
 }
 
 // TODO: explain perf wise if new bounding box every frame is better than
 // - update position on every update
 // - width, height on every transition
 impl Rect {
-    pub fn new(position: Point, width: i16, height: i16) -> Self {
-        Self {
-            position,
-            width,
-            height,
-        }
+    pub fn new(position: Point, size: Size) -> Self {
+        Self { position, size }
     }
 }
 
