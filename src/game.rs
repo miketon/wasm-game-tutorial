@@ -186,7 +186,7 @@ struct SheetRect {
 ///
 /// Doesn't know about RedHatBoyStateMachine ... TODO: Explain why?
 mod red_hat_boy_states {
-    use crate::engine::{Point, Rect, Size};
+    use crate::engine::{Point, Size};
 
     // animation timing/tick for playback
     pub const FRAME_TICK_RATE: u8 = 3;
@@ -251,24 +251,14 @@ mod red_hat_boy_states {
     }
 
     impl RedHatBoyState<Idle> {
-        pub fn new() -> Self {
+        pub fn new(bounding_box_size: Size) -> Self {
             let position = Point { x: 0, y: FLOOR };
-            // FIXME: Get sprite size for bounding width and height
-            let bounding_box = Rect::new(
-                position,
-                Size {
-                    width: 320,
-                    height: 320,
-                },
-            );
             RedHatBoyState {
                 context: RedHatBoyContext {
-                    // ah instead of on_state_transition - explicit frame reset
-                    // FIXME: find a way to use on_state_transition
                     frame: 0,
                     position,
                     velocity: Point { x: 0, y: 0 },
-                    bounding_box,
+                    bounding_box_size,
                 },
                 _state: Idle {},
             }
@@ -287,9 +277,13 @@ mod red_hat_boy_states {
             self
         }
 
-        pub fn run(self) -> RedHatBoyState<Running> {
+        pub fn run(self, size: Size) -> RedHatBoyState<Running> {
             RedHatBoyState {
-                context: self.context.on_state_transition().run_right(),
+                context: self
+                    .context
+                    .on_state_transition()
+                    .run_right()
+                    .with_bounding_box_size(size),
                 _state: Running {},
             }
         }
@@ -305,19 +299,23 @@ mod red_hat_boy_states {
             self
         }
 
-        pub fn slide(self) -> RedHatBoyState<Sliding> {
+        pub fn slide(self, size: Size) -> RedHatBoyState<Sliding> {
             RedHatBoyState {
-                context: self.context.on_state_transition(),
+                context: self
+                    .context()
+                    .on_state_transition()
+                    .with_bounding_box_size(size),
                 _state: Sliding {},
             }
         }
 
-        pub fn jump(self) -> RedHatBoyState<Jumping> {
+        pub fn jump(self, size: Size) -> RedHatBoyState<Jumping> {
             RedHatBoyState {
                 context: self
                     .context()
                     .set_vertical_velocity(JUMP_SPEED)
-                    .on_state_transition(),
+                    .on_state_transition()
+                    .with_bounding_box_size(size),
                 _state: Jumping {},
             }
         }
@@ -378,7 +376,7 @@ mod red_hat_boy_states {
         pub frame: u8,
         pub position: Point,
         pub velocity: Point,
-        pub bounding_box: Rect,
+        pub bounding_box_size: Size,
     }
 
     impl RedHatBoyContext {
@@ -386,7 +384,6 @@ mod red_hat_boy_states {
         /// - set frame_count -> render frame
         /// - set velocity -> position
         pub fn update(mut self, frame_count: u8) -> Self {
-            let current_position = self.position;
             // add gravity
             self.velocity.y += GRAVITY;
             // update render frame
@@ -404,27 +401,23 @@ mod red_hat_boy_states {
                 self.position.y = FLOOR;
             }
 
-            // update bounding box if position has changed
-            // FIXME: Replace hardcoded values with actual sprite values
-            if self.position != current_position {
-                self.bounding_box = Rect::new(
-                    self.position,
-                    Size {
-                        width: 320,
-                        height: 320,
-                    },
-                );
-            }
             self
         }
 
-        /// ::on_state_transition -> prevent RUNTIME ERROR
-        /// Reset to frame 0 on transition :
-        /// - because each state will variable frame count
-        /// - else we risk accessing out of index frame => runtime ERROR
+        /// ::on_state_transition -> we must :
+        /// - ELI5: prevent RUNTIME ERROR
+        ///     - Reset to frame 0 on transition :
+        ///         - because each state will variable frame count
+        ///         - else we risk accessing out of index frame => runtime ERROR
         fn on_state_transition(mut self) -> Self {
             // reset frame
             self.frame = 0;
+            self
+        }
+
+        /// update bounding box size field
+        fn with_bounding_box_size(mut self, size: Size) -> Self {
+            self.bounding_box_size = size;
             self
         }
 
@@ -507,12 +500,24 @@ impl RedHatBoyStateMachine {
     // - the `self` passed in as an argument is moved -> no longer accessible
     // - &mut self would return a reference
     // TODO: Explain how to determine when to consume vs referencing
-    fn transition(self, event: Event) -> Self {
+    fn transition(self, event: Event, sheet: Option<&Sheet>) -> Self {
         use RedHatBoyStateMachine::*;
         match (self, event) {
-            (Idle(state), Event::Run) => state.run().into(),
-            (Running(state), Event::Slide) => state.slide().into(),
-            (Running(state), Event::Jump) => state.jump().into(),
+            (Idle(state), Event::Run) => {
+                let size =
+                    Self::get_size_for_state(sheet.expect("Sheet not found"), state.frame_name());
+                state.run(size).into()
+            }
+            (Running(state), Event::Slide) => {
+                let size =
+                    Self::get_size_for_state(sheet.expect("Sheet not found"), state.frame_name());
+                state.slide(size).into()
+            }
+            (Running(state), Event::Jump) => {
+                let size =
+                    Self::get_size_for_state(sheet.expect("Sheet not found"), state.frame_name());
+                state.jump(size).into()
+            }
             (Idle(state), Event::Update) => state.update().into(),
             (Running(state), Event::Update) => state.update().into(),
             (Sliding(state), Event::Update) => state.update().into(),
@@ -523,9 +528,24 @@ impl RedHatBoyStateMachine {
         }
     }
 
+    fn get_size_for_state(sheet: &Sheet, frame_name: &str) -> Size {
+        // HACK: find a better way to get the frame ... this stinks
+        let frame_key = format!("{} (1).png", frame_name);
+        match sheet.frames.get(&frame_key) {
+            Some(cell) => Size {
+                width: cell.frame.w,
+                height: cell.frame.h,
+            },
+            None => Size {
+                width: 160,
+                height: 160,
+            },
+        }
+    }
+
     // TODO: Explain why converting updates into a transition event
     fn update(self) -> Self {
-        self.transition(Event::Update)
+        self.transition(Event::Update, None)
     }
 
     fn frame_name(&self) -> &str {
@@ -562,8 +582,10 @@ pub struct RedHatBoy {
 ///     - run_right() ...
 impl RedHatBoy {
     fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
+        // FIXME: don't hard code "Idle" here
+        let bounding_box_size = RedHatBoyStateMachine::get_size_for_state(&sheet, "Idle");
         RedHatBoy {
-            state: RedHatBoyStateMachine::Idle(RedHatBoyState::new()),
+            state: RedHatBoyStateMachine::Idle(RedHatBoyState::new(bounding_box_size)),
             sheet,
             image,
         }
@@ -574,17 +596,6 @@ impl RedHatBoy {
         // - somehow it consumes self via mut self ??? I don't get it
         self.state = self.state.update();
     }
-
-    // fn update_bounding_box(&mut self) {
-    //     let frame_name = self.get_current_frame_name();
-    //     if let Some(sprite) = self.sheet.frames.get(&frame_name) {
-    //         self.state.context().bounding_box = BoundingBox::new(
-    //             self.position(),
-    //             sprite.frame.w.into(),
-    //             sprite.frame.h.into(),
-    //         );
-    //     }
-    // }
 
     fn draw(&mut self, renderer: &Renderer) {
         let frame_name = self.get_current_frame_name();
@@ -615,19 +626,22 @@ impl RedHatBoy {
         );
 
         #[cfg(debug_assertions)]
-        self.state.context().bounding_box.draw_debug(renderer);
+        {
+            let bounding_box = Rect::new(self.position(), self.bounding_box_size());
+            bounding_box.draw_debug(renderer);
+        }
     }
 
     fn run_right(&mut self) {
-        self.state = self.state.transition(Event::Run);
+        self.state = self.state.transition(Event::Run, Some(&self.sheet));
     }
 
     fn slide(&mut self) {
-        self.state = self.state.transition(Event::Slide);
+        self.state = self.state.transition(Event::Slide, Some(&self.sheet));
     }
 
     fn jump(&mut self) {
-        self.state = self.state.transition(Event::Jump);
+        self.state = self.state.transition(Event::Jump, Some(&self.sheet));
     }
 
     // Addresses Law of Demeter
@@ -636,6 +650,10 @@ impl RedHatBoy {
     // - previously we manually called the full path at each entry
     fn position(&self) -> Point {
         self.state.context().position
+    }
+
+    fn bounding_box_size(&self) -> Size {
+        self.state.context().bounding_box_size
     }
 
     // TODO: check if it makes sense to cache as opposed to calling in both
