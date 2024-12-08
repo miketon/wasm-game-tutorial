@@ -55,7 +55,10 @@ pub enum WalkTheDog {
 }
 
 impl WalkTheDog {
-    // TODO: Explain why lifetime static is needed here???
+    // 'static lifetime is needed because these paths are needed for the entire
+    // duration of the program
+    // - string literals are implicitly static because they are stored in
+    // read-only memory
     const SHEET_PATH: &'static str = "rhb.json";
     const IMAGE_PATH: &'static str = "rhb.png";
 
@@ -176,8 +179,6 @@ struct SheetRect {
     h: i16,
 }
 
-// #region StateMachines
-
 /// All code relating to individual states are behind this mod block and will
 /// enforce unrepresentable states, by making it impossible to reach a state
 /// transition without using ONLY the methods provided :
@@ -238,7 +239,10 @@ mod red_hat_boy_states {
     #[derive(Debug, Copy, Clone)]
     pub struct RedHatBoyState<S> {
         context: RedHatBoyContext,
-        // TODO: this is never read ... explain why?
+        // _state is used for type-level tracking (phantom type)
+        // - it's only purpose is to differentiate between states at compile
+        // time, preventing invalid state transitions
+        // - it's never read, so we underscored _state
         _state: S,
     }
 
@@ -268,10 +272,6 @@ mod red_hat_boy_states {
             IDLE_NAME
         }
 
-        // TODO: explain why we updated this to consume and return the SAME
-        // state, given that it's not changing states???
-        // - they somehow don't make unnecessary copies because they take
-        // ownership of self when called and then return it???
         pub fn update(mut self) -> Self {
             self.context = self.context.update(IDLE_FRAMES);
             self
@@ -496,10 +496,19 @@ impl From<IsSliding> for RedHatBoyStateMachine {
 }
 
 impl RedHatBoyStateMachine {
+    // ELI5: consumption vs reference
+    // [Consume] when:
+    // - operation fundamentally transforms the object (state transition)
+    // - ensure old state can't be accessed
+    // - operation needs exclusive access to all fields
+    // [Reference] when:
+    // - operation only needs to read data
+    // - multiple references might be needed
+    // - operation makes temporary modification
+    //
     // CONSUMING self (state instance) and returning a new Self (state)
     // - the `self` passed in as an argument is moved -> no longer accessible
     // - &mut self would return a reference
-    // TODO: Explain how to determine when to consume vs referencing
     fn transition(self, event: Event, sheet: Option<&Sheet>) -> Self {
         use RedHatBoyStateMachine::*;
         match (self, event) {
@@ -522,8 +531,10 @@ impl RedHatBoyStateMachine {
             (Running(state), Event::Update) => state.update().into(),
             (Sliding(state), Event::Update) => state.update().into(),
             (Jumping(state), Event::Update) => state.update().into(),
-            // TODO: Explain why this doesn't just defeat the point of a well
-            // defined match set if we gonna just default here?
+            // ELI5: This default arm is necessary because :
+            // - handles invalid state transitions(e.g. trying to Jump while Sliding)
+            // - maintains the current state for unsupported transitions
+            // - defensive programming practice for future state additions
             _ => self,
         }
     }
@@ -666,5 +677,3 @@ impl RedHatBoy {
         )
     }
 }
-
-// #endregion
