@@ -40,6 +40,106 @@
 // │   game.rs      │ Animation usage      │ Final composition/scene          │
 // └────────────────┴──────────────────────┴──────────────────────────────────┘
 
-// TODO: explain what is happening here
-// -- this mod.rs is sprite.rs but as a diretory?
+use crate::engine::{Point, Size};
+use std::num::NonZeroU8;
+
+// This is a directory based mod structure
+// mod.rs is the entry point for the sprite/ directory (sprite.rs)
+// allowing organization of related code into submodules
 pub mod red_hat_boy;
+
+pub const FRAME_TICK_RATE: u8 = 3;
+pub const DEFAULT_SPRITE_SIZE: Size = Size {
+    width: 64,
+    height: 64,
+};
+
+const IDLE_FRAMES: u8 = 10;
+const RUN_FRAMES: u8 = 8;
+const SLIDE_FRAMES: u8 = 5;
+const JUMP_FRAMES: u8 = 12;
+
+/// SpriteMetaData
+/// - frame_count - private initialization via new(frame_count)
+/// - animation_speed
+/// - default_size (bounding box)
+pub struct SpriteMetaData {
+    frame_count: NonZeroU8, // private, must be init with new()
+    pub animation_speed: u8,
+    pub default_size: Size,
+}
+
+impl SpriteMetaData {
+    pub fn new(frame_count: u8) -> Self {
+        Self {
+            frame_count: NonZeroU8::new(frame_count).expect("frame_count must be > 0"),
+            animation_speed: FRAME_TICK_RATE,
+            default_size: DEFAULT_SPRITE_SIZE,
+        }
+    }
+}
+
+pub trait SpriteState {
+    // Required methods - must be implemented
+    // TODO: Explain is it because we left these blank that they MUST be impl?
+    fn name() -> &'static str;
+    fn metadata() -> SpriteMetaData;
+
+    // Default methods - shared implementation
+    fn frame_key(frame: u8) -> String {
+        format!("{} ({}).png", Self::name(), frame)
+    }
+
+    fn total_frames() -> u8 {
+        // Convert NonZeroU8 to u8 before mathing
+        Self::metadata().frame_count.get() * Self::metadata().animation_speed - 1
+    }
+}
+
+// State specific unit structs can be declared in two ways:
+// - pub struct Idle;  // Preferred for marker types, implicit no fields EVER
+// - pub struct Idle{} // More explicit, use when fields will be added later
+pub struct Idle;
+pub struct Running;
+pub struct Sliding;
+pub struct Jumping;
+
+impl SpriteState for Idle {
+    fn name() -> &'static str {
+        "Idle"
+    }
+
+    fn metadata() -> SpriteMetaData {
+        SpriteMetaData::new(IDLE_FRAMES)
+    }
+}
+
+impl SpriteState for Running {
+    fn name() -> &'static str {
+        "Run"
+    }
+
+    fn metadata() -> SpriteMetaData {
+        SpriteMetaData::new(RUN_FRAMES)
+    }
+}
+
+impl SpriteState for Sliding {
+    fn name() -> &'static str {
+        "Slide"
+    }
+
+    fn metadata() -> SpriteMetaData {
+        SpriteMetaData::new(SLIDE_FRAMES)
+    }
+}
+
+impl SpriteState for Jumping {
+    fn name() -> &'static str {
+        "Jump"
+    }
+
+    fn metadata() -> SpriteMetaData {
+        SpriteMetaData::new(JUMP_FRAMES)
+    }
+}
