@@ -40,7 +40,7 @@
 // │   game.rs      │ Animation usage      │ Final composition/scene          │
 // └────────────────┴──────────────────────┴──────────────────────────────────┘
 
-use crate::engine::{Point, Size};
+use crate::engine::Size;
 use std::num::NonZeroU8;
 
 // This is a directory based mod structure
@@ -99,9 +99,13 @@ pub trait SpriteState {
 // State specific unit structs can be declared in two ways:
 // - pub struct Idle;  // Preferred for marker types, implicit no fields EVER
 // - pub struct Idle{} // More explicit, use when fields will be added later
+#[derive(Debug, Copy, Clone)]
 pub struct Idle;
+#[derive(Debug, Copy, Clone)]
 pub struct Running;
+#[derive(Debug, Copy, Clone)]
 pub struct Sliding;
+#[derive(Debug, Copy, Clone)]
 pub struct Jumping;
 
 impl SpriteState for Idle {

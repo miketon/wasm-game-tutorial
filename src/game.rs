@@ -5,6 +5,8 @@ use crate::engine::input::*;
 #[cfg(debug_assertions)]
 use crate::engine::DebugDraw;
 use crate::engine::{Game, Image, Point, Rect, Renderer, Size};
+use crate::sprite::SpriteState;
+use crate::sprite::{Idle, Jumping, Running, Sliding};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -188,6 +190,7 @@ struct SheetRect {
 /// Doesn't know about RedHatBoyStateMachine ... TODO: Explain why?
 mod red_hat_boy_states {
     use crate::engine::{Point, Size};
+    use crate::sprite::{Idle, Jumping, Running, Sliding, SpriteState};
 
     // animation timing/tick for playback
     pub const FRAME_TICK_RATE: u8 = 3;
@@ -198,22 +201,6 @@ mod red_hat_boy_states {
     const FLOOR: i16 = 475;
     const RUNNING_SPEED: i16 = 3;
 
-    // sprite consts
-    const IDLE_NAME: &str = "Idle";
-    const RUN_NAME: &str = "Run";
-    const SLIDE_NAME: &str = "Slide";
-    const JUMP_NAME: &str = "Jump";
-    // actual sprite count as defined by sheet json
-    const IDLE_FRAME_COUNT: u8 = 10;
-    const RUN_FRAME_COUNT: u8 = 8;
-    const SLIDE_FRAME_COUNT: u8 = 5;
-    const JUMP_FRAME_COUNT: u8 = 12;
-    // sprite count formatted for animation timing/tick
-    const IDLE_FRAMES: u8 = IDLE_FRAME_COUNT * FRAME_TICK_RATE - 1;
-    const RUN_FRAMES: u8 = RUN_FRAME_COUNT * FRAME_TICK_RATE - 1;
-    const SLIDE_FRAMES: u8 = SLIDE_FRAME_COUNT * FRAME_TICK_RATE - 1;
-    const JUMP_FRAMES: u8 = JUMP_FRAME_COUNT * FRAME_TICK_RATE - 1;
-
     pub enum IsJumping {
         Done(RedHatBoyState<Running>),
         InProgress(RedHatBoyState<Jumping>),
@@ -223,18 +210,6 @@ mod red_hat_boy_states {
         Done(RedHatBoyState<Running>),
         InProgress(RedHatBoyState<Sliding>),
     }
-
-    #[derive(Debug, Copy, Clone)]
-    pub struct Idle;
-
-    #[derive(Debug, Copy, Clone)]
-    pub struct Running;
-
-    #[derive(Debug, Copy, Clone)]
-    pub struct Sliding;
-
-    #[derive(Debug, Copy, Clone)]
-    pub struct Jumping;
 
     #[derive(Debug, Copy, Clone)]
     pub struct RedHatBoyState<S> {
@@ -269,11 +244,11 @@ mod red_hat_boy_states {
         }
 
         pub fn frame_name(&self) -> &str {
-            IDLE_NAME
+            Idle::name()
         }
 
         pub fn update(mut self) -> Self {
-            self.context = self.context.update(IDLE_FRAMES);
+            self.context = self.context.update(Idle::total_frames());
             self
         }
 
@@ -291,11 +266,11 @@ mod red_hat_boy_states {
 
     impl RedHatBoyState<Running> {
         pub fn frame_name(&self) -> &str {
-            RUN_NAME
+            Running::name()
         }
 
         pub fn update(mut self) -> Self {
-            self.context = self.context.update(RUN_FRAMES);
+            self.context = self.context.update(Running::total_frames());
             self
         }
 
@@ -323,15 +298,16 @@ mod red_hat_boy_states {
 
     impl RedHatBoyState<Sliding> {
         pub fn frame_name(&self) -> &str {
-            SLIDE_NAME
+            Sliding::name()
         }
 
-        // TODO: Explain why this update isn't returning another state here ...
-        // Any additional options?
+        /// Returns an enum because Sliding can:
+        /// - End      (Done)
+        /// - Continue (InProgress)
         pub fn update(mut self) -> IsSliding {
-            self.context = self.context.update(SLIDE_FRAMES);
+            self.context = self.context.update(Sliding::total_frames());
             // on every update we check if animation is complete
-            if self.context.frame >= SLIDE_FRAMES {
+            if self.context.frame >= Sliding::total_frames() {
                 IsSliding::Done(self.stand())
             } else {
                 IsSliding::InProgress(self)
@@ -348,11 +324,11 @@ mod red_hat_boy_states {
 
     impl RedHatBoyState<Jumping> {
         pub fn frame_name(&self) -> &str {
-            JUMP_NAME
+            Jumping::name()
         }
 
         pub fn update(mut self) -> IsJumping {
-            self.context = self.context.update(JUMP_FRAMES);
+            self.context = self.context.update(Jumping::total_frames());
             if self.context.position.y >= FLOOR {
                 IsJumping::Done(self.land())
             } else {
@@ -486,9 +462,9 @@ impl From<IsSliding> for RedHatBoyStateMachine {
     fn from(is_sliding: IsSliding) -> Self {
         use IsSliding::*;
         match is_sliding {
-            // TODO: Explain how this code infers :
-            // - Complete : RedHatBoyState<Running>
-            // - Sliding : RedHatBoyState<Sliding>
+            // Type inference works because:
+            // - Each variant has a specific type
+            // - Into trait implementation exists
             Done(running_state) => running_state.into(),
             InProgress(sliding_state) => sliding_state.into(),
         }
@@ -513,18 +489,21 @@ impl RedHatBoyStateMachine {
         use RedHatBoyStateMachine::*;
         match (self, event) {
             (Idle(state), Event::Run) => {
-                let size =
-                    Self::get_size_for_state(sheet.expect("Sheet not found"), state.frame_name());
+                let size = Self::get_size_for_state::<crate::sprite::Running>(
+                    sheet.expect("Sheet not found"),
+                );
                 state.run(size).into()
             }
             (Running(state), Event::Slide) => {
-                let size =
-                    Self::get_size_for_state(sheet.expect("Sheet not found"), state.frame_name());
+                let size = Self::get_size_for_state::<crate::sprite::Sliding>(
+                    sheet.expect("Sheet not found"),
+                );
                 state.slide(size).into()
             }
             (Running(state), Event::Jump) => {
-                let size =
-                    Self::get_size_for_state(sheet.expect("Sheet not found"), state.frame_name());
+                let size = Self::get_size_for_state::<crate::sprite::Jumping>(
+                    sheet.expect("Sheet not found"),
+                );
                 state.jump(size).into()
             }
             (Idle(state), Event::Update) => state.update().into(),
@@ -539,23 +518,26 @@ impl RedHatBoyStateMachine {
         }
     }
 
-    fn get_size_for_state(sheet: &Sheet, frame_name: &str) -> Size {
-        // HACK: find a better way to get the frame ... this stinks
-        let frame_key = format!("{} (1).png", frame_name);
-        match sheet.frames.get(&frame_key) {
-            Some(cell) => Size {
+    fn get_size_for_state<S: SpriteState>(sheet: &Sheet) -> Size {
+        let frame_key = S::frame_key(1);
+        sheet
+            .frames
+            .get(&frame_key)
+            .map(|cell| Size {
                 width: cell.frame.w,
                 height: cell.frame.h,
-            },
-            None => Size {
-                width: 160,
-                height: 160,
-            },
-        }
+            })
+            .unwrap_or_else(|| {
+                log!("Warning: Missing sprite data for state: {}", S::name());
+                S::metadata().default_size
+            })
     }
 
-    // TODO: Explain why converting updates into a transition event
     fn update(self) -> Self {
+        // updates() are transitions(Event::Update,) because :
+        // - unified state transition mechanism
+        // - consistend handling of state changes
+        // - simpler state machine logic
         self.transition(Event::Update, None)
     }
 
@@ -593,8 +575,8 @@ pub struct RedHatBoy {
 ///     - run_right() ...
 impl RedHatBoy {
     fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
-        // FIXME: don't hard code "Idle" here
-        let bounding_box_size = RedHatBoyStateMachine::get_size_for_state(&sheet, "Idle");
+        let bounding_box_size =
+            RedHatBoyStateMachine::get_size_for_state::<crate::sprite::Idle>(&sheet);
         RedHatBoy {
             state: RedHatBoyStateMachine::Idle(RedHatBoyState::new(bounding_box_size)),
             sheet,
