@@ -94,6 +94,10 @@ pub trait SpriteState {
         // Convert NonZeroU8 to u8 before mathing
         Self::metadata().frame_count.get() * Self::metadata().animation_speed - 1
     }
+
+    fn current_frame_name(frame: u8) -> String {
+        format!("{} ({}).png", Self::name(), (frame / FRAME_TICK_RATE + 1))
+    }
 }
 
 // State specific unit structs can be declared in two ways:

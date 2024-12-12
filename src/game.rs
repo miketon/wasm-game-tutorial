@@ -149,7 +149,7 @@ impl Game for WalkTheDog {
                     height: 600,
                 },
             });
-            // NOTE: Draw order matters : background -> foreground
+            // Draw order matters : background -> foreground
             walk.background.draw(renderer);
             walk.boy.draw(renderer);
             walk.stone.draw(renderer);
@@ -191,9 +191,6 @@ struct SheetRect {
 mod red_hat_boy_states {
     use crate::engine::{Point, Size};
     use crate::sprite::{Idle, Jumping, Running, Sliding, SpriteState};
-
-    // animation timing/tick for playback
-    pub const FRAME_TICK_RATE: u8 = 3;
 
     // physics consts
     const JUMP_SPEED: i16 = -25; // negative because top left is origin
@@ -541,16 +538,6 @@ impl RedHatBoyStateMachine {
         self.transition(Event::Update, None)
     }
 
-    fn frame_name(&self) -> &str {
-        use RedHatBoyStateMachine::*;
-        match self {
-            Idle(state) => state.frame_name(),
-            Running(state) => state.frame_name(),
-            Sliding(state) => state.frame_name(),
-            Jumping(state) => state.frame_name(),
-        }
-    }
-
     // TODO: Find out if this can be simplified with a macro?
     fn context(&self) -> &RedHatBoyContext {
         use RedHatBoyStateMachine::*;
@@ -649,13 +636,14 @@ impl RedHatBoy {
         self.state.context().bounding_box_size
     }
 
-    // TODO: check if it makes sense to cache as opposed to calling in both
-    // draw and update_bounding_box
     fn get_current_frame_name(&self) -> String {
-        format!(
-            "{} ({}).png",
-            self.state.frame_name(),
-            (self.state.context().frame / red_hat_boy_states::FRAME_TICK_RATE) + 1
-        )
+        use RedHatBoyStateMachine::*;
+        // Match state to the correct current SpriteState impl
+        match self.state {
+            Idle(_) => crate::sprite::Idle::current_frame_name(self.state.context().frame),
+            Running(_) => crate::sprite::Running::current_frame_name(self.state.context().frame),
+            Sliding(_) => crate::sprite::Sliding::current_frame_name(self.state.context().frame),
+            Jumping(_) => crate::sprite::Jumping::current_frame_name(self.state.context().frame),
+        }
     }
 }
