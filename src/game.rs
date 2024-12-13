@@ -1,12 +1,11 @@
-use self::red_hat_boy_states::*;
+use self::red_hat_boy_states::{IsJumping, IsSliding, RedHatBoyContext, RedHatBoyState};
 use crate::browser;
 use crate::engine;
 use crate::engine::input::*;
 #[cfg(debug_assertions)]
 use crate::engine::DebugDraw;
 use crate::engine::{Game, Image, Point, Rect, Renderer, Size};
-use crate::sprite::SpriteState;
-use crate::sprite::{Idle, Jumping, Running, Sliding};
+use crate::sprite::{self, SpriteState};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -190,7 +189,7 @@ struct SheetRect {
 /// Doesn't know about RedHatBoyStateMachine ... TODO: Explain why?
 mod red_hat_boy_states {
     use crate::engine::{Point, Size};
-    use crate::sprite::{Idle, Jumping, Running, Sliding, SpriteState};
+    use crate::sprite::{self, SpriteState};
 
     // physics consts
     const JUMP_SPEED: i16 = -25; // negative because top left is origin
@@ -199,13 +198,13 @@ mod red_hat_boy_states {
     const RUNNING_SPEED: i16 = 3;
 
     pub enum IsJumping {
-        Done(RedHatBoyState<Running>),
-        InProgress(RedHatBoyState<Jumping>),
+        Done(RedHatBoyState<sprite::Running>),
+        InProgress(RedHatBoyState<sprite::Jumping>),
     }
 
     pub enum IsSliding {
-        Done(RedHatBoyState<Running>),
-        InProgress(RedHatBoyState<Sliding>),
+        Done(RedHatBoyState<sprite::Running>),
+        InProgress(RedHatBoyState<sprite::Sliding>),
     }
 
     #[derive(Debug, Copy, Clone)]
@@ -226,7 +225,7 @@ mod red_hat_boy_states {
         }
     }
 
-    impl RedHatBoyState<Idle> {
+    impl RedHatBoyState<sprite::Idle> {
         pub fn new(bounding_box_size: Size) -> Self {
             let position = Point { x: 0, y: FLOOR };
             RedHatBoyState {
@@ -236,96 +235,80 @@ mod red_hat_boy_states {
                     velocity: Point { x: 0, y: 0 },
                     bounding_box_size,
                 },
-                _state: Idle {},
+                _state: sprite::Idle {},
             }
         }
 
-        pub fn frame_name(&self) -> &str {
-            Idle::name()
-        }
-
         pub fn update(mut self) -> Self {
-            self.context = self.context.update(Idle::total_frames());
+            self.context = self.context.update(sprite::Idle::total_frames());
             self
         }
 
-        pub fn run(self, size: Size) -> RedHatBoyState<Running> {
+        pub fn run(self, size: Size) -> RedHatBoyState<sprite::Running> {
             RedHatBoyState {
                 context: self
                     .context
                     .on_state_transition()
                     .run_right()
                     .with_bounding_box_size(size),
-                _state: Running {},
+                _state: sprite::Running {},
             }
         }
     }
 
-    impl RedHatBoyState<Running> {
-        pub fn frame_name(&self) -> &str {
-            Running::name()
-        }
-
+    impl RedHatBoyState<sprite::Running> {
         pub fn update(mut self) -> Self {
-            self.context = self.context.update(Running::total_frames());
+            self.context = self.context.update(sprite::Running::total_frames());
             self
         }
 
-        pub fn slide(self, size: Size) -> RedHatBoyState<Sliding> {
+        pub fn slide(self, size: Size) -> RedHatBoyState<sprite::Sliding> {
             RedHatBoyState {
                 context: self
                     .context()
                     .on_state_transition()
                     .with_bounding_box_size(size),
-                _state: Sliding {},
+                _state: sprite::Sliding {},
             }
         }
 
-        pub fn jump(self, size: Size) -> RedHatBoyState<Jumping> {
+        pub fn jump(self, size: Size) -> RedHatBoyState<sprite::Jumping> {
             RedHatBoyState {
                 context: self
                     .context()
                     .set_vertical_velocity(JUMP_SPEED)
                     .on_state_transition()
                     .with_bounding_box_size(size),
-                _state: Jumping {},
+                _state: sprite::Jumping {},
             }
         }
     }
 
-    impl RedHatBoyState<Sliding> {
-        pub fn frame_name(&self) -> &str {
-            Sliding::name()
-        }
-
+    impl RedHatBoyState<sprite::Sliding> {
         /// Returns an enum because Sliding can:
         /// - End      (Done)
         /// - Continue (InProgress)
         pub fn update(mut self) -> IsSliding {
-            self.context = self.context.update(Sliding::total_frames());
+            self.context = self.context.update(sprite::Sliding::total_frames());
             // on every update we check if animation is complete
-            if self.context.frame >= Sliding::total_frames() {
+            if self.context.frame >= sprite::Sliding::total_frames() {
                 IsSliding::Done(self.stand())
             } else {
                 IsSliding::InProgress(self)
             }
         }
 
-        pub fn stand(self) -> RedHatBoyState<Running> {
+        pub fn stand(self) -> RedHatBoyState<sprite::Running> {
             RedHatBoyState {
                 context: self.context.on_state_transition(),
-                _state: Running {},
+                _state: sprite::Running {},
             }
         }
     }
 
-    impl RedHatBoyState<Jumping> {
-        pub fn frame_name(&self) -> &str {
-            Jumping::name()
-        }
-
+    impl RedHatBoyState<sprite::Jumping> {
         pub fn update(mut self) -> IsJumping {
-            self.context = self.context.update(Jumping::total_frames());
+            self.context = self.context.update(sprite::Jumping::total_frames());
             if self.context.position.y >= FLOOR {
                 IsJumping::Done(self.land())
             } else {
@@ -333,10 +316,10 @@ mod red_hat_boy_states {
             }
         }
 
-        pub fn land(self) -> RedHatBoyState<Running> {
+        pub fn land(self) -> RedHatBoyState<sprite::Running> {
             RedHatBoyState {
                 context: self.context.on_state_transition(),
-                _state: Running {},
+                _state: sprite::Running {},
             }
         }
     }
@@ -415,32 +398,32 @@ pub enum Event {
 
 #[derive(Debug, Copy, Clone)]
 enum RedHatBoyStateMachine {
-    Idle(RedHatBoyState<Idle>),
-    Running(RedHatBoyState<Running>),
-    Sliding(RedHatBoyState<Sliding>),
-    Jumping(RedHatBoyState<Jumping>),
+    Idle(RedHatBoyState<sprite::Idle>),
+    Running(RedHatBoyState<sprite::Running>),
+    Sliding(RedHatBoyState<sprite::Sliding>),
+    Jumping(RedHatBoyState<sprite::Jumping>),
 }
 
-impl From<RedHatBoyState<Idle>> for RedHatBoyStateMachine {
-    fn from(state: RedHatBoyState<Idle>) -> Self {
+impl From<RedHatBoyState<sprite::Idle>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<sprite::Idle>) -> Self {
         RedHatBoyStateMachine::Idle(state)
     }
 }
 
-impl From<RedHatBoyState<Running>> for RedHatBoyStateMachine {
-    fn from(state: RedHatBoyState<Running>) -> Self {
+impl From<RedHatBoyState<sprite::Running>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<sprite::Running>) -> Self {
         RedHatBoyStateMachine::Running(state)
     }
 }
 
-impl From<RedHatBoyState<Sliding>> for RedHatBoyStateMachine {
-    fn from(state: RedHatBoyState<Sliding>) -> Self {
+impl From<RedHatBoyState<sprite::Sliding>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<sprite::Sliding>) -> Self {
         RedHatBoyStateMachine::Sliding(state)
     }
 }
 
-impl From<RedHatBoyState<Jumping>> for RedHatBoyStateMachine {
-    fn from(state: RedHatBoyState<Jumping>) -> Self {
+impl From<RedHatBoyState<sprite::Jumping>> for RedHatBoyStateMachine {
+    fn from(state: RedHatBoyState<sprite::Jumping>) -> Self {
         RedHatBoyStateMachine::Jumping(state)
     }
 }
