@@ -6,6 +6,7 @@ use crate::engine::input::*;
 use crate::engine::DebugDraw;
 use crate::engine::{Game, Image, Point, Rect, Renderer, Size};
 use crate::sprite::{self, SpriteState};
+use ::std::rc::Rc;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use futures::join;
@@ -535,7 +536,31 @@ impl RedHatBoyStateMachine {
 
 pub struct RedHatBoy {
     state: RedHatBoyStateMachine,
-    sheet: Sheet,
+    // update to reference to eliminate cloning for memory perf improvement :
+    // TABLE:
+    // ┌─────────────── Prevous Memory Impact ───────────────────────────┐
+    // │ ┌──────────────┐      ┌─────────────┐     ┌────────────────┐    │
+    // │ │  RedHatBoy   │      │    Sheet    │     │   HashMap      │    │
+    // │ │              │ owns │ frames:     │owns │ String -> Cell │    │
+    // │ │              ├─────►│ HashMap     ├────►│                │    │
+    // │ └──────────────┘      └─────────────┘     └────────────────┘    │
+    // │                                                                 │
+    // │ Memory Overhead:                                                │
+    // │ - Each Sheet instance contains a full copy of the HashMap       │
+    // │ - HashMap cloning duplicates all String keys and Cell values    │
+    // └─────────────────────────────────────────────────────────────────┘
+    // ┌─────────────── Updated Memory Impact ───────────────────────────┐
+    // │ ┌──────────────┐                                                │
+    // │ │  RedHatBoy1  │      ┌─────────────┐                           │
+    // │ │  Rc<Sheet>   │──┐   │    Sheet    │                           │
+    // │ └──────────────┘  │   │ (Shared)    │                           │
+    // │                   ├──►│             │                           │
+    // │ ┌──────────────┐  │   │             │                           │
+    // │ │  RedHatBoy2  │──┘   │             │                           │
+    // │ │  Rc<Sheet>   │      │             │                           │
+    // │ └──────────────┘      └─────────────┘                           │
+    // └─────────────────────────────────────────────────────────────────┘
+    sheet: Rc<Sheet>,
     image: HtmlImageElement,
 }
 
@@ -545,6 +570,7 @@ pub struct RedHatBoy {
 ///     - run_right() ...
 impl RedHatBoy {
     fn new(sheet: Sheet, image: HtmlImageElement) -> Self {
+        let sheet = Rc::new(sheet);
         let bounding_box_size =
             RedHatBoyStateMachine::get_size_for_state::<crate::sprite::Idle>(&sheet);
         RedHatBoy {
