@@ -54,6 +54,18 @@ pub const DEFAULT_SPRITE_SIZE: Size = Size {
     height: 64,
 };
 
+// TABLE:
+// ┌─────────────── Animation Frame Sequences ─────────────────┐
+// │  State      Frames    Description                         │
+// ├────────────┬─────────┬────────────────────────────────────┤
+// │  Idle      │ [1-10]  │ Idle stand cycle                   │
+// ├────────────┼─────────┼────────────────────────────────────┤
+// │  Running   │ [1-8]   │ Looping run cycle                  │
+// ├────────────┼─────────┼────────────────────────────────────┤
+// │  Sliding   │ [1-5]   │ Slide animation, returns to run    │
+// ├────────────┼─────────┼────────────────────────────────────┤
+// │  Jumping   │ [1-12]  │ Jump animation, returns to run     │
+// └────────────┴─────────┴────────────────────────────────────┘
 const IDLE_FRAMES: u8 = 10;
 const RUN_FRAMES: u8 = 8;
 const SLIDE_FRAMES: u8 = 5;

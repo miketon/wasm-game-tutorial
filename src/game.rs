@@ -390,6 +390,17 @@ mod red_hat_boy_states {
     }
 }
 
+/// TABLE:
+/// ┌──────────────── State Transition Flow ──────────────────┐
+/// │  From State  →  Event   →  To State                     │
+/// ├─────────────────────────────────────────────────────────┤
+/// │  Idle        →  Run     →  Running                      │
+/// │  Running     →  Slide   →  Sliding                      │
+/// │  Running     →  Jump    →  Jumping                      │
+/// │  -------        ------                                  │
+/// │  Sliding     →  Update  →  Running (when complete)      │
+/// │  Jumping     →  Update  →  Running (when landed)        │
+/// └─────────────────────────────────────────────────────────┘
 pub enum Event {
     Run,
     Slide,
