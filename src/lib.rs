@@ -4,37 +4,29 @@ use crate::game::WalkTheDog;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
+// TABLE:
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │                      Directory Structure Analogy                         │
+// ├───────────────────┬──────────────────────────────────────────────────────┤
+// │ Code Directory    │          Photoshop Equivalent                        │
+// ├───────────────────┼──────────────────────────────────────────────────────┤
+// │ src/              │ Project Root                                         │
+// │ ├── lib.rs        │ Project Manager/Asset Organization                   │
+// │ ├── game.rs       │ Main Composition Where Animations Are Used           │
+// │ └── sprite/       │ Character Asset Library                              │
+// │     ├── mod.rs    │ Master Sprite Sheet Settings (.psd)                  │
+// │     ├── states.rs │ Animation Sequences (Layer Groups)                   │
+// │     └── red_hat_  │ Character-Specific Settings (Layer Comps)            │
+// │         boy.rs    │                                                      │
+// └───────────────────┴──────────────────────────────────────────────────────┘
+// - @src/ in addition to game.rs and lib.rs we have wasm related:
+//   - engine.rs  : Engine core + resource structures
+//   - browser.rs : webassembly html + canvas bindings
+
 #[macro_use]
 mod browser;
 mod engine;
 mod game;
-// TABLE:
-// ┌──────────────────────────────────────────────────────────────────────────┐
-// │                 Rust Module Organization Patterns                        │
-// ├─────────────────┬────────────────────────┬───────────────────────────────┤
-// │     Pattern     │    File Structure      │           Explanation         │
-// ├─────────────────┼────────────────────────┼───────────────────────────────┤
-// │                 │ src/                   │                               │
-// │                 │ ├── lib.rs             │ Single file holds all sprite  │
-// │  Single File    │ ├── game.rs            │ related code. Simpler, less   │
-// │                 │ └── sprite.rs          │ organized for larger modules  │
-// ├─────────────────┼────────────────────────┼───────────────────────────────┤
-// │                 │ src/                   │                               │
-// │                 │ ├── lib.rs             │ mod.rs serves as sprite.rs but│
-// │  Directory with │ ├── game.rs            │ organizes related code        │
-// │    mod.rs       │ └── sprite/            │ into submodules within the    │
-// │                 │     ├── mod.rs         │ sprite/ directory             │
-// │                 │     ├── states.rs      │                               │
-// │                 │     └── red_hat_boy.rs │                               │
-// ├─────────────────┴────────────────────────┴───────────────────────────────┤
-// │                              Key Points                                  │
-// ├──────────────────────────────────────────────────────────────────────────┤
-// │ • mod.rs and sprite.rs are equivalent - just different org patterns      │
-// │ • Directory approach better for modules with multiple related components │
-// │ • Single file approach simpler for small, self-contained modules         │
-// │ • Both approaches are valid and commonly used in Rust project            │
-// └──────────────────────────────────────────────────────────────────────────┘
-//   - mod.rs IS sprite.rs wrt to where the code goes
 mod sprite;
 
 // ==================== Main Functions ====================

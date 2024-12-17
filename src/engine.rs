@@ -1,10 +1,12 @@
 use crate::browser;
 use crate::engine::input::*;
 use anyhow::{anyhow, Error, Result};
-// ELI5: web assembly is a single threaded environment, so Rc RefCell > Mutex
 use async_trait::async_trait;
 use futures::channel::oneshot::channel;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::collections::HashMap;
+// web assembly is a single threaded environment, so Rc RefCell > Mutex
 use std::rc::Rc;
 use wasm_bindgen::{
     // unchecked_ref (unsafe) cast from Javascript type to Rust type
@@ -295,6 +297,54 @@ pub async fn load_image(source: &str) -> Result<HtmlImageElement> {
     rx.await??;
 
     Ok(image)
+}
+
+// ELI5: MEMORY LAYOUT
+// ┌─ Sheet ─────────────────────────────────────────────────────────────────┐
+// │                                                                         │
+// │  frames: HashMap<String, Cell>                                          │
+// │  ┌─ Key (String) ─┬─ Value (Cell) ────────────────────────────────┐     │
+// │  │                │                                               │     │
+// │  │   "idle"       │    frame: SheetRect                           │     │
+// │  │                │    ┌────────────┐                             │     │
+// │  │                │    │  x: i16    │                             │     │
+// │  │                │    │  y: i16    │                             │     │
+// │  │                │    │  w: i16    │                             │     │
+// │  │                │    │  h: i16    │                             │     │
+// │  │                │    └────────────┘                             │     │
+// │  └────────────────┴───────────────────────────────────────────────┘     │
+// │                                                                         │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// MEMORY SIZE BREAKDOWN
+// ┌─ Type ─────────┬─ Size ─────┬─ Location ─┬─ Notes ───────────────────────┐
+// │ Sheet          │ 24 bytes   │ Stack      │ Contains HashMap pointer      │
+// ├────────────────┼────────────┼────────────┼───────────────────────────────┤
+// │ HashMap        │ Variable   │ Heap       │ Grows with number of entries  │
+// ├────────────────┼────────────┼────────────┼───────────────────────────────┤
+// │ String (key)   │ 24 bytes   │ Heap       │ Per key + string content      │
+// ├────────────────┼────────────┼────────────┼───────────────────────────────┤
+// │ Cell           │ 8 bytes    │ Stack      │ Contains SheetRect            │
+// ├────────────────┼────────────┼────────────┼───────────────────────────────┤
+// │ SheetRect      │ 8 bytes    │ Stack      │ Four i16 values (2 bytes each)│
+// └────────────────┴────────────┴────────────┴───────────────────────────────┘
+//
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Sheet {
+    pub frames: HashMap<String, Cell>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Cell {
+    pub frame: SheetRect,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SheetRect {
+    pub x: i16,
+    pub y: i16,
+    pub w: i16,
+    pub h: i16,
 }
 
 pub mod input {

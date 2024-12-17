@@ -2,7 +2,7 @@ use getrandom::getrandom; // js shim because access to system entropy needed
 use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering}; // no js shim needed because it's pure Rust impl
 
-// ELI5: Can't use static in an impl block ... here's why :
+// Can't use static in an impl block ... here's why :
 // - a) static items are associated with the entire program not just a type
 // - b) impl blocks are for defining methods and associated functfions for a
 // specific type, NOT for declaring program-wide data
@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering}; // no js shim needed 
 // of these variables
 // HACK: moving to the module level instead
 static DEPTH: AtomicUsize = AtomicUsize::new(5);
-// ELI5: f64.to_bits() is currently not stable as a const function
+// NOTE: f64.to_bits() is currently not stable as a const function
 // static LENGTH: AtomicU64 = AtomicU64::new(600.0_f64.to_bits());
 // - PHOTOSHOP terms - this unstable feature is an experimental filter that
 // isn't supported in the current release, so our workaround is to
@@ -23,11 +23,11 @@ static LENGTH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(LENGTH_DEFAULT.to_b
 // ==================== Types ====================
 // Represents three points of a triangle in 2D space
 type TrianglePoints = [(f64, f64); 3];
-// ELI5: Represent color as u8 vs usize given it's 8bit 0-255 range
+//Represent color as u8 vs usize given it's 8bit 0-255 range
 type Color = (u8, u8, u8);
 
 // ==================== Modules ====================
-// ELI5: When to use modules vs structs :
+// When to use modules vs structs :
 // - No Self : managing CONSTANTS and STATELESS functions doesn't need instance
 // - more idiomatic way to handle triangle GEOMETRY and html STANDARDS
 // - control @function level public/private namespace

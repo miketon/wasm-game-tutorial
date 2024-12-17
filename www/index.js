@@ -1,4 +1,4 @@
-// ELI5: why match the Cargo.toml package name, not directory name
+// TODO: Explain why match the Cargo.toml package name, not directory name
 // 'rust_webpack_template' not 'walk-the-dog'
 import {
   main_js,

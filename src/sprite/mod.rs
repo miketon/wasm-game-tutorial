@@ -1,21 +1,25 @@
+// This is a directory based mod structure
+// mod.rs is the entry point for the sprite/ directory (sprite.rs)
+// allowing organization of related code into submodules
+mod red_hat_boy;
+mod state;
+
 // TABLE:
-// ┌──────────────────────────────────────────────────────────────────────────┐
-// │                      Directory Structure Analogy                         │
-// ├───────────────────┬──────────────────────────────────────────────────────┤
-// │ Code Directory    │          Photoshop Equivalent                        │
-// ├───────────────────┼──────────────────────────────────────────────────────┤
-// │ src/              │ Project Root                                         │
-// │ ├── lib.rs        │ Project Manager/Asset Organization                   │
-// │ ├── game.rs       │ Main Composition Where Animations Are Used           │
-// │ └── sprite/       │ Character Asset Library                              │
-// │     ├── mod.rs    │ Master Sprite Sheet Settings (.psd)                  │
-// │     ├── states.rs │ Animation Sequences (Layer Groups)                   │
-// │     └── red_hat_  │ Character-Specific Settings (Layer Comps)            │
-// │         boy.rs    │                                                      │
-// └───────────────────┴──────────────────────────────────────────────────────┘
-// - @src/ in addition to game.rs and lib.rs we have wasm related:
-//   - browser.rs
-//   - engine.rs
+// ┌─────────────── File Structure ──────────────────
+// │ sprite/
+// ├─ mod.rs           // Public interface
+// │  ├─ SpriteState trait
+// │  └─ Basic sprite types
+// │
+// ├─ state.rs         // State management
+// │  ├─ Constants
+// │  ├─ State types
+// │  └─ State implementations
+// │
+// └─ red_hat_boy.rs   // Character logic
+//    ├─ Events
+//    ├─ State machine
+//    └─ Character implementation
 // ┌──────────────────────────────────────────────────────────────────────────┐
 // │                      Code Structure vs Photoshop Concepts                │
 // ├────────────────┬──────────────────────┬──────────────────────────────────┤
@@ -41,12 +45,9 @@
 // └────────────────┴──────────────────────┴──────────────────────────────────┘
 
 use crate::engine::Size;
+// TODO: Explain why we have to pub export here?
+pub use red_hat_boy::RedHatBoy;
 use std::num::NonZeroU8;
-
-// This is a directory based mod structure
-// mod.rs is the entry point for the sprite/ directory (sprite.rs)
-// allowing organization of related code into submodules
-pub mod red_hat_boy;
 
 pub const FRAME_TICK_RATE: u8 = 3;
 pub const DEFAULT_SPRITE_SIZE: Size = Size {
@@ -54,7 +55,7 @@ pub const DEFAULT_SPRITE_SIZE: Size = Size {
     height: 64,
 };
 
-// TABLE:
+// ELI5:
 // ┌─────────────── Animation Frame Sequences ─────────────────┐
 // │  State      Frames    Description                         │
 // ├────────────┬─────────┬────────────────────────────────────┤
